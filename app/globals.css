@@ -1,0 +1,156 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/* Design tokens — "Twilight Energy"                                   */
+/* ------------------------------------------------------------------ */
+@theme {
+  --color-dusk-950: #07080c;
+  --color-dusk-900: #0b0d13;
+  --color-dusk-850: #0f121a;
+  --color-dusk-800: #141823;
+  --color-dusk-700: #1b2030;
+  --color-dusk-600: #262c40;
+  --color-line: #2b3145;
+
+  --color-cream: #f3ede2;
+  --color-dim: #9097a6;
+  --color-faint: #5d6478;
+
+  --color-sun: #ffb23e;
+  --color-sun-bright: #ffce5a;
+  --color-ember: #ff6a3d;
+  --color-leaf: #74d79a;
+  --color-sky: #93d4f2;
+
+  --font-display: var(--font-fraunces);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --radius-card: 1.25rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
+html {
+  color-scheme: dark;
+  scrollbar-color: var(--color-dusk-600) transparent;
+}
+
+body {
+  background-color: var(--color-dusk-950);
+  color: var(--color-cream);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-sun) 35%, transparent);
+  color: #fff;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-dusk-700);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-dusk-600);
+  background-clip: padding-box;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reusable surfaces                                                   */
+/* ------------------------------------------------------------------ */
+.glass {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--color-dusk-800) 82%, transparent),
+    color-mix(in oklab, var(--color-dusk-850) 90%, transparent)
+  );
+  border: 1px solid color-mix(in oklab, var(--color-line) 70%, transparent);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+}
+
+.glass-sun {
+  border-color: color-mix(in oklab, var(--color-sun) 28%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-sun) 8%, transparent),
+    0 18px 50px -24px color-mix(in oklab, var(--color-ember) 55%, transparent);
+}
+
+.text-gradient-sun {
+  background: linear-gradient(100deg, var(--color-sun-bright), var(--color-ember));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hairline {
+  border-color: color-mix(in oklab, var(--color-line) 65%, transparent);
+}
+
+/* Grain overlay */
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ------------------------------------------------------------------ */
+/* Motion                                                              */
+/* ------------------------------------------------------------------ */
+@keyframes sunPulse {
+  0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
+  50% { opacity: 0.82; transform: translateX(-50%) scale(1.05); }
+}
+@keyframes ringDrift {
+  from { transform: translate(-50%, 0) rotate(0deg); }
+  to { transform: translate(-50%, 0) rotate(360deg); }
+}
+@keyframes floatY {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes shimmer {
+  100% { background-position: 200% 0; }
+}
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes blink {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+
+.anim-msg-in { animation: msgIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--color-dusk-700) 70%, transparent) 25%,
+    color-mix(in oklab, var(--color-dusk-600) 90%, transparent) 50%,
+    color-mix(in oklab, var(--color-dusk-700) 70%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
