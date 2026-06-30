@@ -1,8 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import Link from "next/link";
-import { ArrowLeft, TrendingUp, Bot, MessageSquare } from "lucide-react";
+import { ArrowLeft, TrendingUp, Bot, MessageSquare, Users, Target } from "lucide-react";
 import { Atmosphere } from "@/components/atmosphere";
+import { PERSONAS } from "@/eval/personas";
 
 export const dynamic = "force-dynamic";
 
@@ -61,16 +62,75 @@ export default async function ResultsPage() {
 }
 
 function EmptyState() {
+  const total = PERSONAS.length;
+  const qualified = PERSONAS.filter((p) => p.qualified).length;
   return (
-    <div className="glass mt-8 rounded-[var(--radius-card)] p-6">
-      <p className="text-cream/90">No results yet.</p>
-      <p className="mt-2 text-sm text-dim">
-        Add your API key to <code className="font-mono text-cream/80">.env.local</code>, then
-        generate the numbers:
-      </p>
-      <pre className="mt-3 overflow-x-auto rounded-xl border border-line/50 bg-dusk-950/70 px-4 py-3 font-mono text-sm text-sun-bright">
-        npm run eval
-      </pre>
+    <div className="mt-8 space-y-4">
+      {/* Methodology — the rigor lands even before numbers exist */}
+      <div className="glass rounded-[var(--radius-card)] p-6">
+        <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-dim">
+          <Users className="h-4 w-4 text-sun" /> The test
+        </div>
+        <p className="mt-2 text-[15px] leading-relaxed text-cream/85">
+          <span className="text-cream">{total} simulated homeowners</span> — {qualified}{" "}
+          genuinely qualified and {total - qualified} not a fit (renters, tiny bills, accidental
+          visitors) — each hold a full chat with two reps. Both run on the{" "}
+          <span className="text-cream/95">same model</span> and the same decision protocol; the
+          only variable is the rep.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-sun/25 bg-dusk-850/60 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-cream">
+              <Bot className="h-4 w-4 text-sun" /> Sunny — agentic
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-dim">
+              Full agent: qualifies, sizes, quotes, and books via 6 tools and multi-step
+              reasoning.
+            </p>
+          </div>
+          <div className="rounded-xl border border-line/50 bg-dusk-850/60 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-cream">
+              <MessageSquare className="h-4 w-4 text-dim" /> Baseline — FAQ bot
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-dim">
+              Same model, no tools or methodology — it just answers questions politely.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* What's scored */}
+      <div className="glass rounded-[var(--radius-card)] p-6">
+        <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-dim">
+          <Target className="h-4 w-4 text-leaf" /> What we score
+        </div>
+        <ul className="mt-3 space-y-2.5 text-sm">
+          <li>
+            <span className="text-cream">Qualified-lead booking rate</span>{" "}
+            <span className="text-faint">— the headline: % of good-fit leads that book a survey.</span>
+          </li>
+          <li>
+            <span className="text-cream">False-push rate</span>{" "}
+            <span className="text-faint">— % of unfit leads wrongly pushed to book. Lower is better; honesty matters.</span>
+          </li>
+          <li>
+            <span className="text-cream">Qualification accuracy</span>{" "}
+            <span className="text-faint">— how often the rep&apos;s book/pass decision matches ground truth.</span>
+          </li>
+        </ul>
+      </div>
+
+      {/* Run it */}
+      <div className="glass rounded-[var(--radius-card)] p-6">
+        <p className="text-cream/90">No results yet.</p>
+        <p className="mt-2 text-sm text-dim">
+          Add an API key to <code className="font-mono text-cream/80">.env.local</code>, then
+          generate the numbers (the run is resumable — finished conversations are cached):
+        </p>
+        <pre className="mt-3 overflow-x-auto rounded-xl border border-line/50 bg-dusk-950/70 px-4 py-3 font-mono text-sm text-sun-bright">
+          npm run eval
+        </pre>
+      </div>
     </div>
   );
 }
