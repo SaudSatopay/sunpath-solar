@@ -7,7 +7,7 @@
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
 ![React](https://img.shields.io/badge/React-19.2-149ECA?logo=react&logoColor=white)
 ![Vercel AI SDK](https://img.shields.io/badge/Vercel%20AI%20SDK-v7-000000?logo=vercel&logoColor=white)
-![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-886FBF?logo=googlegemini&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini-Flash-886FBF?logo=googlegemini&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38BDF8?logo=tailwindcss&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-22c55e)
@@ -113,7 +113,7 @@ flowchart TB
         Econ["Economics engine<br/>sizing · ITC · payback · 25-yr savings"]
     end
 
-    Model["🧠  Gemini 2.5 Flash<br/>(swap → Claude Opus 4.8 in 1 line)"]
+    Model["🧠  Gemini Flash<br/>(swap → Claude Opus 4.8 in 1 line)"]
 
     UI -->|"UIMessage stream"| Stream
     Stream <-->|"reason · generate"| Model
@@ -282,7 +282,7 @@ Every dependency is bleeding-edge **on purpose** — and chosen for a reason, no
 | **Framework** | Next.js **16** (App Router, Turbopack) · React **19.2** | Streaming-native route handlers; Server Components; one runtime for API + UI |
 | **Agent runtime** | Vercel **AI SDK v7** (`streamText`, `stopWhen: stepCountIs`, `convertToModelMessages`) | First-class multi-step tool-calling + **provider-agnostic** (swap models in 1 line) |
 | **Generative UI** | AI SDK UI message stream → typed `tool-*` parts → React | Tool calls become **interactive components**, not invisible plumbing |
-| **Model** | **Gemini 2.5 Flash** (free) · swap → **Claude Opus 4.8** | Strong tool-calling at zero cost to build; trivially upgraded for the final |
+| **Model** | **Gemini Flash** (`gemini-flash-latest`, free) · swap → **Claude Opus 4.8** | Strong tool-calling at zero cost to build; trivially upgraded for the final |
 | **Schemas** | **Zod 4** | Typed tool inputs the model must satisfy; doubles as runtime validation |
 | **Styling** | **Tailwind v4** (`@theme`) + **Motion 12** | A custom design system, not a component library; tasteful, GPU-friendly motion |
 | **Icons / type** | lucide-react · **Fraunces** display + Geist | Distinctive, non-generic visual identity |

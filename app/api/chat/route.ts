@@ -10,7 +10,9 @@ export async function POST(req: Request): Promise<Response> {
   const { messages }: { messages: UIMessage[] } = await req.json();
 
   const result = streamText({
-    model: google("gemini-2.5-flash"),
+    // gemini-flash-latest: current Flash model with the most free-tier daily headroom.
+    // Swap to "claude-opus-4-8" (via @ai-sdk/anthropic) for the strongest final.
+    model: google("gemini-flash-latest"),
     system: SYSTEM_PROMPT,
     messages: await convertToModelMessages(messages, { tools: salesTools }),
     tools: salesTools,
