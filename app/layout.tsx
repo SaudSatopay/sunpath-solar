@@ -22,10 +22,35 @@ const mono = Geist_Mono({
   display: "swap",
 });
 
+// Absolute base for resolving OG/Twitter image URLs. Prefers an explicit
+// override, then Vercel's production domain, then the known deployment.
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : "https://sunpath-beige.vercel.app");
+
+const title = "SunPath Solar — Meet Sunny, your AI solar guide";
+const description =
+  "Sunny is SunPath Solar's AI consultant: get a right-sized system, real numbers, and a booked survey — in one conversation.";
+
 export const metadata: Metadata = {
-  title: "SunPath Solar — Meet Sunny, your AI solar guide",
-  description:
-    "Sunny is SunPath Solar's AI consultant: get a right-sized system, real numbers, and a booked survey — in one conversation.",
+  metadataBase: new URL(siteUrl),
+  title,
+  description,
+  // app/opengraph-image.tsx is picked up automatically for og:image / twitter:image.
+  openGraph: {
+    type: "website",
+    siteName: "SunPath Solar",
+    url: "/",
+    title,
+    description,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+  },
 };
 
 export default function RootLayout({
