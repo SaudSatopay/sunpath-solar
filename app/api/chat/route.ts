@@ -1,4 +1,3 @@
-import { google } from "@ai-sdk/google";
 import {
   streamText,
   convertToModelMessages,
@@ -8,6 +7,7 @@ import {
 } from "ai";
 import { salesTools } from "@/lib/tools";
 import { SYSTEM_PROMPT } from "@/lib/agent-prompt";
+import { salesModel } from "@/lib/model";
 
 // Allow time for a multi-step agentic turn (qualify -> recommend -> quote -> book).
 export const maxDuration = 60;
@@ -43,9 +43,9 @@ export async function POST(req: Request): Promise<Response> {
   const { messages }: { messages: UIMessage[] } = await req.json();
 
   const result = streamText({
-    // gemini-flash-latest: current Flash model with the most free-tier daily headroom.
-    // Swap to "claude-opus-4-8" (via @ai-sdk/anthropic) for the strongest final.
-    model: google("gemini-flash-latest"),
+    // Provider/model from the environment (lib/model.ts). Defaults to the
+    // Gemini free tier; set SUNPATH_PROVIDER=anthropic for Claude Opus 4.8.
+    model: salesModel(),
     system: SYSTEM_PROMPT,
     messages: await convertToModelMessages(messages, { tools: salesTools }),
     tools: salesTools,
