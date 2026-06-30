@@ -19,6 +19,7 @@ const SUGGESTIONS = [
 function SunMark({ size = 28 }: { size?: number }) {
   return (
     <span
+      aria-hidden
       className="relative grid place-items-center rounded-full"
       style={{
         width: size,
@@ -105,7 +106,13 @@ export function Chat() {
       </header>
 
       {/* Messages */}
-      <div className="flex-1 space-y-5 overflow-y-auto py-6">
+      <div
+        className="flex-1 space-y-5 overflow-y-auto py-6"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        aria-label="Conversation with Sunny"
+      >
         {messages.length === 0 ? (
           <Empty onPick={send} />
         ) : (
@@ -152,11 +159,15 @@ export function Chat() {
         )}
 
         {waiting && (
-          <div className="anim-msg-in flex gap-3">
+          <div className="anim-msg-in flex gap-3" role="status">
+            <span className="sr-only">Sunny is typing…</span>
             <div className="mt-1 shrink-0">
               <SunMark size={26} />
             </div>
-            <div className="glass flex items-center gap-1.5 rounded-2xl rounded-bl-md px-4 py-3.5">
+            <div
+              aria-hidden
+              className="glass flex items-center gap-1.5 rounded-2xl rounded-bl-md px-4 py-3.5"
+            >
               {[0, 1, 2].map((i) => (
                 <span
                   key={i}
@@ -169,7 +180,7 @@ export function Chat() {
         )}
 
         {error && (
-          <div className="flex items-center gap-2 text-sm text-ember">
+          <div role="alert" className="flex items-center gap-2 text-sm text-ember">
             <span>Something went wrong.</span>
             <button
               onClick={() => regenerate()}
@@ -193,7 +204,12 @@ export function Chat() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Tell Sunny about your home and energy bill…"
-            className="flex-1 bg-transparent px-3 py-2 text-[15px] text-cream placeholder:text-faint focus:outline-none"
+            aria-label="Message Sunny"
+            name="message"
+            autoComplete="off"
+            enterKeyHint="send"
+            // 16px keeps iOS Safari from zooming the viewport on focus.
+            className="flex-1 bg-transparent px-3 py-2 text-base text-cream placeholder:text-faint focus:outline-none"
             autoFocus
           />
           <motion.button
