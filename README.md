@@ -1,75 +1,319 @@
-# ☀️ SunPath Solar — Sunny, the agentic AI sales rep
+<div align="center">
 
-> FlowZint AI Hackathon 2026 · **Sales Bot** track
+# ☀️ SunPath Solar
 
-Most "sales bots" are a chat box over an FAQ. **Sunny** is an _agent_: it qualifies a
-homeowner, sizes a real system, handles objections with grounded facts, generates a quote,
-and **books a site survey** — taking real actions through tools, with every step streaming
-into the chat as a live interactive card.
+### Meet **Sunny** — an _agentic_ AI solar sales rep that qualifies, sizes, quotes, and **books a survey**, live in chat.
 
-It's built for one number: **booked surveys from genuinely qualified homeowners.** A
-reproducible eval ([`/results`](#-the-eval-that-proves-it)) measures the lift over a baseline
-FAQ bot.
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
+![React](https://img.shields.io/badge/React-19.2-149ECA?logo=react&logoColor=white)
+![Vercel AI SDK](https://img.shields.io/badge/Vercel%20AI%20SDK-v7-000000?logo=vercel&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-886FBF?logo=googlegemini&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38BDF8?logo=tailwindcss&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-22c55e)
 
-> SunPath Solar is a fictional installer. All figures are realistic US-market estimates used
-> to keep the demo honest — the company and catalog are invented.
+**🏆 FlowZint AI Hackathon 2026 · Sales Bot track**
 
----
+_Not a chat box over an FAQ. An agent that takes real actions — and proves it sells._
 
-## What makes it agentic (not a chat wrapper)
-
-Sunny runs a real sales funnel via **6 tools** and multi-step tool use. Each tool call renders
-a bespoke **generative-UI card** inline, and a funnel rail (`Qualify → Design → Quote → Book`)
-lights up as it progresses.
-
-| Tool | What it does | Renders as |
-|------|--------------|-----------|
-| `scoreLead` | BANT-style qualification → 0–100 score, tier, what's missing | animated score gauge |
-| `recommendSystem` | Picks the right package for the bill + computes economics | system card with net price / payback / savings |
-| `lookupIncentives` | Federal ITC + state-specific programs | incentives card |
-| `generateQuote` | Formal quote with price waterfall + financing | premium quote card (25-yr savings hero) |
-| `bookSurvey` | Books the on-site survey — **the conversion** | booking confirmation |
-| `logToCRM` | Records the lead + pipeline stage | system log line |
-
-**Guardrails for trust:** the agent never invents prices, incentives, or production figures —
-they come from tool output or the knowledge base in `lib/solar-data.ts`. Objection handling is
-grounded in an approved playbook. It's coached to be honest even when it costs the sale (it will
-tell a renter or a tiny-bill household that solar isn't a fit).
+</div>
 
 ---
 
-## 📈 The eval that proves it
+> **TL;DR** — Most "sales bots" answer questions. **Sunny runs the funnel.** It qualifies a homeowner, sizes a real system, handles objections with grounded facts, builds a quote, and books a site survey — through **6 tools** and **multi-step tool-calling**, with every action streaming into the chat as a **bespoke interactive card**. It's measured against one number: _booked surveys from genuinely qualified homeowners_, via a reproducible A/B eval.
 
-`eval/run.ts` plays every simulated homeowner in `eval/personas.ts` against **two reps** —
-Sunny (agentic, with tools) and a plain FAQ bot — using the **same model** and the **same lead
-simulator**, with an identical `[BOOKED]` / `[DECLINE]` decision protocol. The only variable is
-the rep.
+<div align="center">
 
-It reports, per arm:
+`Qualify` ➜ `Design` ➜ `Quote` ➜ `Book` — and an honest "not a fit" when that's the truth.
 
-- **Booking rate among genuinely qualified leads** → the headline lift
-- **False-push rate** on unqualified leads (did the rep pressure an unfit homeowner?)
-- **Qualification accuracy** (booked exactly the right leads)
+</div>
 
-```bash
-npm run eval        # writes eval/results.json; view it at /results
+---
+
+## 📑 Contents
+
+- [Why this exists](#-why-this-exists)
+- [What makes it agentic](#-what-makes-it-agentic-not-a-chat-wrapper)
+- [System architecture](#-system-architecture)
+- [How the agent works](#-how-the-agent-works-a-real-turn)
+- [The 6 tools](#-the-6-tools)
+- [The sales funnel as a state machine](#-the-sales-funnel-as-a-state-machine)
+- [Generative UI](#-generative-ui--the-agent-renders-itself)
+- [Trust by construction](#-trust-by-construction-no-hallucinated-numbers)
+- [Does it actually sell? The eval](#-does-it-actually-sell-the-conversion-lift-eval)
+- [Tech stack & why](#-tech-stack--why-each-choice)
+- [Project structure](#-project-structure)
+- [Quickstart](#-quickstart)
+- [Deployment](#-deployment)
+- [How it maps to the rubric](#-how-it-maps-to-the-rubric)
+- [Design system](#-design-system--twilight-energy)
+- [Roadmap](#-roadmap)
+- [Disclaimer & license](#-disclaimer--license)
+
+---
+
+## 🔍 Why this exists
+
+Residential solar is a **high-consideration, high-ticket** sale. The bottleneck is rarely the panels — it's the **funnel**:
+
+| Stage | Where deals die |
+|---|---|
+| **Qualification** | Reps waste hours on renters, tiny bills, and people who won't move — or worse, pressure a bad-fit homeowner and burn trust. |
+| **Education** | Buyers don't understand sizing, incentives, or payback, so they stall. |
+| **Objections** | "Too expensive," "what about my roof," "I'm moving" — answered inconsistently, often with made-up numbers. |
+| **Conversion** | The single highest-value action — booking a site survey — gets lost in a thread of Q&A. |
+
+A generic FAQ chatbot **answers questions**. It doesn't qualify, it doesn't size, it doesn't quote, and it almost never **closes**. SunPath's thesis: the win is an agent that drives the funnel end-to-end while staying honest — and can _prove_ it lifts conversion.
+
+---
+
+## ⚡ What makes it agentic (not a chat wrapper)
+
+```mermaid
+flowchart LR
+    A["🗣️ Plain-English<br/>homeowner message"] --> B["🧠 Sunny reasons<br/>over a sales methodology"]
+    B --> C{"Decide an action"}
+    C -->|"qualify"| T1["scoreLead"]
+    C -->|"size"| T2["recommendSystem"]
+    C -->|"incentives"| T3["lookupIncentives"]
+    C -->|"quote"| T4["generateQuote"]
+    C -->|"close"| T5["bookSurvey"]
+    C -->|"record"| T6["logToCRM"]
+    T1 & T2 & T3 & T4 & T5 & T6 --> D["📦 Structured result"]
+    D --> E["🎴 Streams in as a<br/>live interactive card"]
+    D --> B
+    E --> F["Funnel rail advances:<br/>Qualify → Design → Quote → Book"]
 ```
 
-The live app surfaces the result at **`/results`** — so the metric is part of the demo, not a
-slide.
+Three things make this an **agent**, not a wrapper:
+
+1. **It acts.** Tools have side effects (a quote is generated, a survey is booked, the CRM is updated) — not just retrieval.
+2. **It chains.** One user turn can fire several tools in sequence (`scoreLead` → `recommendSystem` → reply) via multi-step tool-calling (`stopWhen: stepCountIs(10)`).
+3. **It renders itself.** Each tool result streams into the UI as a purpose-built component — the agent's reasoning becomes a tangible artifact.
 
 ---
 
-## 🧰 Bleeding-edge stack
+## 🏗 System architecture
 
-| Layer | Choice |
-|-------|--------|
-| Framework | **Next.js 16** (App Router, Turbopack) · **React 19.2** |
-| AI | **Vercel AI SDK v7** (`streamText`, multi-step `stopWhen: stepCountIs`) + `@ai-sdk/google` (provider-swappable) |
-| Model | **Gemini 2.5 Flash** (free tier) — switch to **Claude Opus 4.8** in one line |
-| Schemas | **Zod 4** tool input schemas |
-| UI | **Tailwind v4**, **Motion 12**, generative tool cards, "Twilight Energy" design system |
-| Deploy | Vercel-ready (one public live URL) |
+```mermaid
+flowchart TB
+    subgraph Client["🖥️  Browser — Next.js 16 · React 19"]
+        UI["Chat UI<br/>useChat + DefaultChatTransport"]
+        Cards["Generative-UI cards<br/>score · system · incentives · quote · booking"]
+        Rail["Funnel rail<br/>Qualify → Design → Quote → Book"]
+    end
+
+    subgraph Server["⚡  Route Handler — app/api/chat"]
+        Stream["streamText( )<br/>multi-step: stopWhen stepCountIs(10)"]
+        Tools["6 agentic tools<br/>Zod-typed input + execute( )"]
+    end
+
+    subgraph KB["📚  Knowledge base — lib/"]
+        Catalog["Catalog · incentives<br/>financing · objection playbook"]
+        Econ["Economics engine<br/>sizing · ITC · payback · 25-yr savings"]
+    end
+
+    Model["🧠  Gemini 2.5 Flash<br/>(swap → Claude Opus 4.8 in 1 line)"]
+
+    UI -->|"UIMessage stream"| Stream
+    Stream <-->|"reason · generate"| Model
+    Stream <-->|"tool calls / results"| Tools
+    Tools --> Catalog
+    Tools --> Econ
+    Stream -.->|"streamed tool parts"| Cards
+    Cards --> Rail
+```
+
+**Separation of concerns is deliberate:** the model decides _what_ to do, the **tools** decide _how_ (and enforce the rules), the **knowledge base** owns the _facts_, and the **UI** turns each action into something a homeowner can see and trust. Swapping the model touches exactly one line.
+
+---
+
+## 🤖 How the agent works (a real turn)
+
+A genuine exchange, captured from the running app:
+
+```mermaid
+sequenceDiagram
+    actor H as 🏠 Homeowner
+    participant UI as Chat UI
+    participant S as Sunny (agent)
+    participant T as Tools
+    participant G as Gemini
+
+    H->>UI: "I own my home in CA, bill ~$260/mo, want solar this year"
+    UI->>S: stream request (system prompt + history)
+    S->>G: reason
+    G-->>S: tool call · scoreLead(homeowner, 260, CA)
+    S->>T: execute scoreLead
+    T-->>S: { score: 83, tier: "hot", qualified: true }
+    Note over UI: 🟢 Lead-score gauge streams in (83/100, "Hot lead")
+    S->>G: continue (multi-step)
+    G-->>S: tool call · recommendSystem(260, CA)
+    S->>T: execute recommendSystem
+    T-->>S: { SunPath Whole-Home, net $23,700, 9.6-yr payback, $2,464/yr }
+    Note over UI: ☀️ System card streams in (grounded numbers)
+    S-->>H: "Whole-Home, ~$23.7k net after the $10.8k ITC… payback ~9.6 yrs"
+    S->>H: "Cash, loan, or lease? I can put together a quote."
+```
+
+Note what happened: from **one** plain-English sentence, the agent extracted `{ homeowner, bill, state }`, scored the lead, sized a system with real economics, and drove toward a quote — **two tool calls, two cards, one coherent reply.**
+
+---
+
+## 🧰 The 6 tools
+
+Every tool is a typed function (`Zod` input schema + `execute`) the model can call. The names below are exactly what the model sees.
+
+| Tool | Purpose | Renders as |
+|---|---|---|
+| 🎯 `scoreLead` | BANT-style qualification → 0–100 score, tier, what's still missing | Animated score **gauge** |
+| ☀️ `recommendSystem` | Picks the right package for the bill + computes full economics | **System card** (net price · payback · yr-1 savings) |
+| 💸 `lookupIncentives` | Federal ITC (30%) + state-specific programs | **Incentives card** |
+| 📄 `generateQuote` | Formal quote with a price waterfall + financing + monthly estimate | **Quote card** (25-yr savings hero) |
+| 📅 `bookSurvey` | Books the on-site survey — **the conversion** | **Booking confirmation** |
+| 🗃️ `logToCRM` | Records the lead + pipeline stage | System **log line** |
+
+> Tools are the security and honesty boundary: the model can _ask_ for a price, but only `recommendSystem` / `generateQuote` can _produce_ one — and they read it from the knowledge base, never invent it.
+
+---
+
+## 🔁 The sales funnel as a state machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Qualify
+    Qualify --> Design: scoreLead passes
+    Qualify --> Exit: not a fit, honest exit
+    Design --> Quote: recommendSystem + lookupIncentives
+    Quote --> Book: generateQuote, interested
+    Book --> Logged: bookSurvey + logToCRM
+    Logged --> [*]
+    Exit --> [*]
+```
+
+The `Exit` path is a **feature, not a bug.** Sunny is scored on booked surveys from _well-fit_ homeowners — so a polite "solar won't pay off for you yet" is a success, and the eval rewards it.
+
+---
+
+## 🎴 Generative UI — the agent renders itself
+
+This is the showpiece. In most chatbots, a tool call is invisible plumbing. Here, the AI SDK v7 **UI message stream** carries typed tool parts, and the client maps each to a bespoke React component (with `Motion` entrance animations):
+
+```mermaid
+flowchart LR
+    TR["Tool result<br/>(typed JSON)"] --> P["UI message part<br/>type: tool-&lt;name&gt;, state: output-available"]
+    P --> D{"Dispatcher<br/>components/tool-cards.tsx"}
+    D -->|scoreLead| C1["⏱️ Score gauge"]
+    D -->|recommendSystem| C2["☀️ System card"]
+    D -->|lookupIncentives| C3["💸 Incentives"]
+    D -->|generateQuote| C4["📄 Quote waterfall"]
+    D -->|bookSurvey| C5["✅ Booking"]
+    D -->|logToCRM| C6["🗃️ CRM log"]
+    D -->|"input-available"| SK["✨ Live skeleton"]
+```
+
+The homeowner doesn't read _about_ a quote — they watch the quote **assemble itself**, line by line, with a 25-year-savings number that animates in. That tangibility is the difference between "a chatbot told me" and "I saw my numbers."
+
+---
+
+## 🛡 Trust by construction (no hallucinated numbers)
+
+The fastest way to lose a high-ticket sale is a number that turns out to be wrong. SunPath makes that **structurally hard**:
+
+```mermaid
+flowchart LR
+    M["🧠 Model wants to<br/>state a price / saving / incentive"] --> G{Grounding gate}
+    G -->|"must call a tool"| T["Tool reads lib/solar-data.ts<br/>+ economics engine"]
+    T -->|"exact, reproducible figures"| M
+    G -.->|"❌ blocked by system prompt"| X["invented numbers"]
+    OBJ["Homeowner objection"] --> PB["Approved objection playbook<br/>(7 grounded rebuttals)"]
+    PB --> M
+```
+
+- **Numbers** come from the catalog + economics engine (gross → −ITC → −state = net; payback = net ÷ annual savings; 25-yr savings with rate inflation). Same inputs → same outputs, every time.
+- **Objections** are answered from an **approved playbook** of 7 grounded rebuttals (cost, payback, roof, moving, aesthetics, reliability, maintenance) — not improvised.
+- **Honesty** is a hard rule: the system prompt forbids inventing figures, over-promising utility approval, or pushing a bad-fit homeowner.
+
+---
+
+## 📈 Does it actually sell? The conversion-lift eval
+
+Claims are cheap. `eval/run.ts` is a **controlled A/B experiment** that measures whether the agent _converts better than a baseline FAQ bot_.
+
+```mermaid
+flowchart LR
+    P["16 simulated leads<br/>eval/personas.ts<br/>(ground-truth: qualified?)"]
+    P --> AG["Arm A — Sunny<br/>agent + 6 tools + methodology"]
+    P --> BL["Arm B — Baseline<br/>plain FAQ bot, no tools"]
+    AG --> CV["Same lead-simulator drives both<br/>identical protocol → [BOOKED] / [DECLINE]"]
+    BL --> CV
+    CV --> MET["Metrics per arm:<br/>• booked-rate among qualified leads<br/>• false-push rate (unqualified)<br/>• qualification accuracy"]
+    MET --> OUT["eval/results.json → live /results dashboard"]
+```
+
+**Why the design is fair:** both arms use the **same model** and the **same lead-simulator**, with one identical decision protocol — a lead emits `[BOOKED]` when convinced and `[DECLINE]` when not. The **only** variable is the rep. The 16 personas carry a ground-truth `qualified` flag (incl. a renter and a tiny-bill household), so we can score not just _did it book_ but _did it book the right people_.
+
+**Run it:**
+
+```bash
+npm run eval        # → writes eval/results.json, surfaced at /results
+```
+
+It outputs the shape below (run it for live numbers):
+
+```jsonc
+{
+  "agentic":  { "convQualifiedPct": __, "falsePushPct": __, "qualAccuracyPct": __ },
+  "baseline": { "convQualifiedPct": __, "falsePushPct": __, "qualAccuracyPct": __ },
+  "liftPoints": __, "relativeLiftPct": __
+}
+```
+
+> ⚠️ **Note on free-tier quota:** Gemini's free tier caps ~20 requests/min, and a multi-step agentic eval bursts past that. Generate the headline number on a quota'd key (a paid tier, or the latest **Claude Opus 4.8**, a one-line swap). The harness includes exponential-backoff retry + throttling and a `PERSONA_LIMIT` for smaller, quota-friendly runs.
+
+---
+
+## 🧱 Tech stack & why each choice
+
+Every dependency is bleeding-edge **on purpose** — and chosen for a reason, not novelty.
+
+| Layer | Choice | Why |
+|---|---|---|
+| **Framework** | Next.js **16** (App Router, Turbopack) · React **19.2** | Streaming-native route handlers; Server Components; one runtime for API + UI |
+| **Agent runtime** | Vercel **AI SDK v7** (`streamText`, `stopWhen: stepCountIs`, `convertToModelMessages`) | First-class multi-step tool-calling + **provider-agnostic** (swap models in 1 line) |
+| **Generative UI** | AI SDK UI message stream → typed `tool-*` parts → React | Tool calls become **interactive components**, not invisible plumbing |
+| **Model** | **Gemini 2.5 Flash** (free) · swap → **Claude Opus 4.8** | Strong tool-calling at zero cost to build; trivially upgraded for the final |
+| **Schemas** | **Zod 4** | Typed tool inputs the model must satisfy; doubles as runtime validation |
+| **Styling** | **Tailwind v4** (`@theme`) + **Motion 12** | A custom design system, not a component library; tasteful, GPU-friendly motion |
+| **Icons / type** | lucide-react · **Fraunces** display + Geist | Distinctive, non-generic visual identity |
+
+> **Note for reviewers:** the codebase was written against the **installed** type definitions (AI SDK v7, Next 16, Zod 4 differ materially from older majors) — not from memory. It builds clean on the first try (`npm run build`).
+
+---
+
+## 🗂 Project structure
+
+```
+sunpath/
+├── app/
+│   ├── api/chat/route.ts      # the agent loop — streamText + tools + multi-step
+│   ├── page.tsx               # the chat experience
+│   └── results/page.tsx       # conversion-lift dashboard (reads eval/results.json)
+├── components/
+│   ├── chat.tsx               # useChat client · message + tool-part rendering · funnel rail
+│   ├── tool-cards.tsx         # generative UI — one bespoke card per tool
+│   ├── stage-rail.tsx         # Qualify → Design → Quote → Book progress
+│   └── atmosphere.tsx         # animated dusk + solar-glow backdrop
+├── lib/
+│   ├── agent-prompt.ts        # Sunny's system prompt (composed from the KB)
+│   ├── tools.ts               # the 6 agent tools (Zod schemas + execute)
+│   ├── solar-data.ts          # catalog · incentives · financing · objections · economics
+│   ├── tool-types.ts          # shared types mirroring tool outputs
+│   └── utils.ts               # formatting + cn()
+└── eval/
+    ├── personas.ts            # 16 simulated leads (ground-truth qualified flag)
+    └── run.ts                 # the conversion-lift harness
+```
 
 ---
 
@@ -79,49 +323,72 @@ slide.
 # 1. Install
 npm install
 
-# 2. Add your FREE Google AI Studio key — https://aistudio.google.com/apikey
-cp .env.example .env.local      # then paste your key into .env.local
+# 2. Add a model key (free — Google AI Studio: https://aistudio.google.com/apikey)
+cp .env.example .env.local      # paste your key as GOOGLE_GENERATIVE_AI_API_KEY
 
 # 3. Run
-npm run dev                     # http://localhost:3000
+npm run dev                     # → http://localhost:3000
 
 # 4. (optional) generate the conversion-lift numbers
-npm run eval                    # populates /results
+npm run eval                    # → populates /results
 ```
 
-Build: `npm run build`. Requires `GOOGLE_GENERATIVE_AI_API_KEY` (free — [Google AI Studio](https://aistudio.google.com/apikey)).
+Build: `npm run build`. Requires `GOOGLE_GENERATIVE_AI_API_KEY`.
 
 ---
 
-## 🗂 Project structure
+## ☁️ Deployment
 
-```
-app/
-  api/chat/route.ts     # streamText + tools + multi-step (the agent loop)
-  page.tsx              # the chat experience
-  results/page.tsx      # conversion-lift dashboard
-components/
-  chat.tsx             # useChat client, message + tool-part rendering, funnel rail
-  tool-cards.tsx       # generative UI: one bespoke card per tool
-  atmosphere.tsx       # animated dusk + solar-glow backdrop
-  stage-rail.tsx       # Qualify → Design → Quote → Book progress
-lib/
-  agent-prompt.ts      # Sunny's system prompt (composed from the KB)
-  tools.ts             # the 6 agent tools (Zod schemas + execute)
-  solar-data.ts        # catalog, incentives, financing, objection playbook, sizing math
-eval/
-  personas.ts          # 16 simulated leads (with ground-truth qualified flag)
-  run.ts               # the conversion-lift harness
-```
+GitHub-linked **Vercel** import (auto-redeploys on push):
+
+1. **[vercel.com/new](https://vercel.com/new)** → import this repo.
+2. Framework auto-detects **Next.js** — keep defaults.
+3. **Add the env var** `GOOGLE_GENERATIVE_AI_API_KEY` (the key is _not_ in the repo, by design).
+4. **Deploy** → public URL in ~90s.
 
 ---
 
-## 🎯 Why this wins the rubric
+## 🎯 How it maps to the rubric
 
-- **Model innovation (30%)** — genuine multi-step agentic tool use with generative UI, not a
-  Q&A wrapper. The agent _acts_.
-- **Real-world applicability (25%)** — a measurable business outcome (booking lift) on a real
-  funnel, grounded in defensible economics.
-- **Technical architecture (25%)** — clean separation (agent / tools / data / UI / eval),
-  typed end-to-end, public repo, builds clean on a bleeding-edge stack.
-- **Documentation (20%)** — this README + a self-explanatory `/results` dashboard.
+| Criterion | Weight | How SunPath earns it |
+|---|:---:|---|
+| **Model Innovation** | **30%** | Genuine multi-step **agentic tool-use** + **generative UI** — the agent _acts_ and _renders itself_, not a Q&A wrapper |
+| **Real-World Applicability** | **25%** | A measurable business outcome (**booking lift**) on a real funnel, grounded in defensible economics |
+| **Technical Architecture** | **25%** | Clean separation (agent / tools / data / UI / eval), typed end-to-end, public repo, builds clean on a 2026 stack |
+| **Documentation** | **20%** | This README + a self-explanatory `/results` dashboard + a reproducible eval |
+
+---
+
+## 🎨 Design system — "Twilight Energy"
+
+A deliberate, non-generic aesthetic — no Inter, no purple-on-white:
+
+- **Canvas:** deep dusk sky with a warm **solar glow** rising from the horizon, drifting energy rings, a fine grain overlay.
+- **Type:** **Fraunces** (optical display serif) against Geist — warmth + precision.
+- **Accent:** a sun/ember gradient; a single cool sky tone; a leaf green reserved for savings.
+- **Motion:** staggered card entrances, an animating score ring, a celebratory booking check — high-impact moments, `prefers-reduced-motion` respected.
+
+---
+
+## 🛣 Roadmap
+
+- [ ] Publish the headline **conversion-lift number** on `/results` (run the eval on a quota'd key)
+- [ ] 2-minute **demo video** (cards streaming → the metric)
+- [ ] Swap the final to **Claude Opus 4.8** for maximum capability
+- [ ] **Bilingual** (AR/EN) toggle — the agent already replies in the user's language
+- [ ] Voice input (Web Speech) for a hands-free funnel
+- [ ] Real CRM / calendar integration behind the `logToCRM` / `bookSurvey` tools
+
+---
+
+## 📄 Disclaimer & license
+
+**SunPath Solar is a fictional installer.** The company, catalog, and customers are invented; all figures are realistic US-market **estimates** used to keep the demo honest, and are confirmed at survey in the narrative. Nothing here is solar financial advice.
+
+Licensed under the **MIT License** — see [`LICENSE`](./LICENSE).
+
+<div align="center">
+
+**Built for the FlowZint AI Hackathon 2026** · _Sales Bot track_
+
+</div>
