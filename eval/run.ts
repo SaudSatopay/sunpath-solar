@@ -10,25 +10,48 @@
  * survey and [DECLINE] when it opts out. We report booked-rate among genuinely
  * qualified leads, the false-push rate among unqualified leads, and the lift.
  *
- * Run:  npm run eval   (requires GOOGLE_GENERATIVE_AI_API_KEY in .env.local)
+ * RESUMABLE: every completed conversation is checkpointed to eval/.eval-cache.json
+ * immediately, so a free-tier quota interruption never loses progress — re-run
+ * `npm run eval` and finished conversations are skipped. eval/results.json is
+ * written only once ALL conversations complete (so the dashboard never shows
+ * partial numbers).
+ *
+ * Run:  npm run eval            (needs a key in .env.local)
+ * Knobs (env): PERSONA_LIMIT, MAX_TURNS, THROTTLE_MS, EVAL_FRESH=1,
+ *              AGENT_PROVIDER/AGENT_MODEL, LEAD_PROVIDER/LEAD_MODEL.
  */
 
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, readFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { generateText, stepCountIs } from "ai";
-import { google } from "@ai-sdk/google";
+import { makeModel, DEFAULT_MODEL, type Provider } from "../lib/model";
 import { PERSONAS, type LeadPersona } from "./personas";
 import { SYSTEM_PROMPT } from "../lib/agent-prompt";
 import { salesTools } from "../lib/tools";
 
-const AGENT_MODEL = process.env.AGENT_MODEL ?? "gemini-2.5-flash";
-const LEAD_MODEL = process.env.LEAD_MODEL ?? "gemini-2.5-flash";
-const MAX_TURNS = 7;
+const asProvider = (v: string | undefined, d: Provider): Provider =>
+  v === "google" || v === "anthropic" ? v : d;
+
+const AGENT_PROVIDER = asProvider(process.env.AGENT_PROVIDER, "google");
+const LEAD_PROVIDER = asProvider(process.env.LEAD_PROVIDER, "google");
+const AGENT_MODEL_ID = process.env.AGENT_MODEL ?? DEFAULT_MODEL[AGENT_PROVIDER];
+const LEAD_MODEL_ID = process.env.LEAD_MODEL ?? DEFAULT_MODEL[LEAD_PROVIDER];
+
+const AGENT_LM = makeModel(AGENT_PROVIDER, AGENT_MODEL_ID);
+const LEAD_LM = makeModel(LEAD_PROVIDER, LEAD_MODEL_ID);
+
+const AGENT_LABEL = `${AGENT_PROVIDER}:${AGENT_MODEL_ID}`;
+const LEAD_LABEL = `${LEAD_PROVIDER}:${LEAD_MODEL_ID}`;
+
+const MAX_TURNS = Number(process.env.MAX_TURNS ?? 7);
 // Be gentle on free-tier rate limits.
 const THROTTLE_MS = Number(process.env.THROTTLE_MS ?? 400);
 // Optionally run a subset of personas (e.g. PERSONA_LIMIT=6) to conserve free-tier quota.
 const PERSONA_LIMIT = Number(process.env.PERSONA_LIMIT ?? 0);
 const LEADS = PERSONA_LIMIT > 0 ? PERSONAS.slice(0, PERSONA_LIMIT) : PERSONAS;
+
+const CACHE_PATH = path.join(process.cwd(), "eval", ".eval-cache.json");
+const RESULTS_PATH = path.join(process.cwd(), "eval", "results.json");
 
 const BASELINE_PROMPT = `You are a friendly FAQ assistant on SunPath Solar's website. Answer homeowners' questions about solar energy accurately and concisely, and be polite. You do not have access to pricing tools, quotes, or scheduling — you just answer questions.`;
 
@@ -92,7 +115,7 @@ function toMessages(transcript: Turn[], selfRole: "agent" | "lead") {
 async function leadReply(p: LeadPersona, transcript: Turn[]) {
   const res = await withRetry(() =>
     generateText({
-      model: google(LEAD_MODEL),
+      model: LEAD_LM,
       system: leadSystem(p),
       messages:
         transcript.length === 0
@@ -110,7 +133,7 @@ async function agentReply(arm: Arm, transcript: Turn[]) {
     arm === "agentic"
       ? await withRetry(() =>
           generateText({
-            model: google(AGENT_MODEL),
+            model: AGENT_LM,
             system: SYSTEM_PROMPT,
             messages,
             tools: salesTools,
@@ -118,7 +141,7 @@ async function agentReply(arm: Arm, transcript: Turn[]) {
           }),
         )
       : await withRetry(() =>
-          generateText({ model: google(AGENT_MODEL), system: BASELINE_PROMPT, messages }),
+          generateText({ model: AGENT_LM, system: BASELINE_PROMPT, messages }),
         );
   await sleep(THROTTLE_MS);
   return res.text.trim() || "(…)";
@@ -152,28 +175,31 @@ interface ArmReport {
   outcomes: PersonaOutcome[];
 }
 
-async function evalArm(arm: Arm): Promise<ArmReport> {
-  const outcomes: PersonaOutcome[] = [];
-  for (const p of LEADS) {
-    let booked = false;
-    let turns = 0;
-    try {
-      const r = await runConversation(p, arm);
-      booked = r.booked;
-      turns = r.turns;
-    } catch (err) {
-      console.error(`  ! ${arm}/${p.id} errored:`, (err as Error).message);
-    }
-    outcomes.push({ id: p.id, qualified: p.qualified, booked, turns });
-    console.log(
-      `  [${arm}] ${p.id.padEnd(16)} ${booked ? "BOOKED " : "—      "} (${p.qualified ? "qualified" : "unqualified"})`,
-    );
-  }
+/* --------------------------- checkpoint cache --------------------------- */
+type Cell = { booked: boolean; turns: number };
 
+async function loadCache(): Promise<Record<string, Cell>> {
+  if (process.env.EVAL_FRESH) {
+    await rm(CACHE_PATH, { force: true });
+    return {};
+  }
+  try {
+    return JSON.parse(await readFile(CACHE_PATH, "utf8")) as Record<string, Cell>;
+  } catch {
+    return {};
+  }
+}
+
+async function saveCache(cache: Record<string, Cell>) {
+  await mkdir(path.dirname(CACHE_PATH), { recursive: true });
+  await writeFile(CACHE_PATH, JSON.stringify(cache, null, 2));
+}
+
+/* ------------------------------- report -------------------------------- */
+function armReport(outcomes: PersonaOutcome[]): ArmReport {
   const qualified = outcomes.filter((o) => o.qualified);
   const unqualified = outcomes.filter((o) => !o.qualified);
   const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
-
   return {
     convQualifiedPct: pct(qualified.filter((o) => o.booked).length, qualified.length),
     falsePushPct: pct(unqualified.filter((o) => o.booked).length, unqualified.length),
@@ -183,50 +209,94 @@ async function evalArm(arm: Arm): Promise<ArmReport> {
 }
 
 async function main() {
-  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+  if (
+    AGENT_PROVIDER === "google" &&
+    LEAD_PROVIDER === "google" &&
+    !process.env.GOOGLE_GENERATIVE_AI_API_KEY
+  ) {
     console.error(
-      "Missing GOOGLE_GENERATIVE_AI_API_KEY. Copy .env.example to .env.local and add your free Google AI Studio key.",
+      "Missing GOOGLE_GENERATIVE_AI_API_KEY. Copy .env.example to .env.local and add your free Google AI Studio key (or set SUNPATH/AGENT/LEAD provider to anthropic with ANTHROPIC_API_KEY).",
     );
     process.exit(1);
   }
 
-  console.log(`\nConversion-lift eval — ${LEADS.length} leads × 2 arms`);
-  console.log(`Agent: ${AGENT_MODEL} · Lead simulator: ${LEAD_MODEL}\n`);
+  const ARMS: Arm[] = ["agentic", "baseline"];
+  const total = LEADS.length * ARMS.length;
+  const cache = await loadCache();
 
-  console.log("Arm 1/2 — agentic (Sunny + tools):");
-  const agentic = await evalArm("agentic");
-  console.log("\nArm 2/2 — baseline (FAQ bot):");
-  const baseline = await evalArm("baseline");
+  console.log(`\nConversion-lift eval — ${LEADS.length} leads × 2 arms (${total} conversations)`);
+  console.log(`Agent: ${AGENT_LABEL} · Lead simulator: ${LEAD_LABEL}`);
+  console.log(`Resumable — progress cached to eval/.eval-cache.json\n`);
 
+  const collected: Record<Arm, PersonaOutcome[]> = { agentic: [], baseline: [] };
+  let done = 0;
+  let aborted: string | null = null;
+
+  outer: for (const arm of ARMS) {
+    console.log(`Arm — ${arm}:`);
+    for (const p of LEADS) {
+      const key = `${arm}:${p.id}`;
+      const cached = !!cache[key];
+      try {
+        let cell = cache[key];
+        if (!cell) {
+          const r = await runConversation(p, arm);
+          cell = { booked: r.booked, turns: r.turns };
+          cache[key] = cell;
+          await saveCache(cache); // persist immediately — survives a later crash
+        }
+        collected[arm].push({ id: p.id, qualified: p.qualified, booked: cell.booked, turns: cell.turns });
+        done++;
+        console.log(
+          `  [${arm}] ${p.id.padEnd(16)} ${cell.booked ? "BOOKED " : "—      "} (${p.qualified ? "qualified" : "unqualified"})${cached ? "  ·cached" : ""}`,
+        );
+      } catch (err) {
+        aborted = `${arm}/${p.id}: ${(err as Error).message}`;
+        break outer;
+      }
+    }
+  }
+
+  const complete = done === total && !aborted;
+
+  // Interim/final stats to the console.
+  const agentic = armReport(collected.agentic);
+  const baseline = armReport(collected.baseline);
   const liftPts = agentic.convQualifiedPct - baseline.convQualifiedPct;
   const relativeLiftPct =
-    baseline.convQualifiedPct > 0
-      ? Math.round((liftPts / baseline.convQualifiedPct) * 100)
-      : null;
-
-  const out = {
-    generatedAt: new Date().toISOString(),
-    agentModel: AGENT_MODEL,
-    leadModel: LEAD_MODEL,
-    personasCount: LEADS.length,
-    qualifiedCount: LEADS.filter((p) => p.qualified).length,
-    agentic,
-    baseline,
-    liftPoints: liftPts,
-    relativeLiftPct,
-  };
-
-  const dir = path.join(process.cwd(), "eval");
-  await mkdir(dir, { recursive: true });
-  await writeFile(path.join(dir, "results.json"), JSON.stringify(out, null, 2));
+    baseline.convQualifiedPct > 0 ? Math.round((liftPts / baseline.convQualifiedPct) * 100) : null;
 
   console.log("\n────────────────────────────────────────");
-  console.log(`Qualified-lead booking rate`);
+  console.log(`Qualified-lead booking rate${complete ? "" : "  (INTERIM — partial run)"}`);
   console.log(`  Sunny (agentic): ${agentic.convQualifiedPct}%`);
   console.log(`  Baseline (FAQ):  ${baseline.convQualifiedPct}%`);
   console.log(`  Lift: +${liftPts} pts${relativeLiftPct != null ? ` (+${relativeLiftPct}% relative)` : ""}`);
   console.log(`  False-push on unqualified — Sunny ${agentic.falsePushPct}% vs baseline ${baseline.falsePushPct}%`);
-  console.log(`\nWrote eval/results.json`);
+
+  if (complete) {
+    const out = {
+      generatedAt: new Date().toISOString(),
+      agentModel: AGENT_LABEL,
+      leadModel: LEAD_LABEL,
+      personasCount: LEADS.length,
+      qualifiedCount: LEADS.filter((p) => p.qualified).length,
+      agentic,
+      baseline,
+      liftPoints: liftPts,
+      relativeLiftPct,
+    };
+    await mkdir(path.dirname(RESULTS_PATH), { recursive: true });
+    await writeFile(RESULTS_PATH, JSON.stringify(out, null, 2));
+    console.log(`\n✓ Complete — wrote eval/results.json (${total} conversations).`);
+  } else {
+    console.log(`\nProgress saved: ${done}/${total} conversations cached (eval/.eval-cache.json).`);
+    if (aborted) {
+      console.log(`Stopped at ${aborted}`);
+      console.log("Likely free-tier quota. Re-run `npm run eval` to continue — finished conversations are skipped.");
+    }
+    console.log("eval/results.json is written only once all conversations complete.");
+    process.exit(1);
+  }
 }
 
 main().catch((err) => {

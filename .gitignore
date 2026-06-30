@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# eval — resumable run progress (results.json IS committed to deploy the number)
+/eval/.eval-cache.json
+
 # next.js
 /.next/
 /out/
