@@ -119,6 +119,27 @@ test("scoreLead: renters are disqualified, never scored as a fit", async () => {
   assert.match(out.rationale, /rent/i);
 });
 
+test("scoreLead: unknown homeownership nurtures instead of disqualifying (live regression)", async () => {
+  // Model sent homeowner:null before establishing ownership — must not crash,
+  // and must not mislabel an unknown as "not a fit".
+  const out = await salesTools.scoreLead.execute!(
+    { homeowner: null, monthlyBill: 220, state: "AZ", roofType: null, timeline: null, motivation: null },
+    opts,
+  );
+  assert.equal(out.qualified, false);
+  assert.equal(out.tier, "cool");
+  assert.ok(out.missing.includes("homeownership"));
+  assert.match(out.rationale, /homeownership/i);
+});
+
+test("logToCRM: null stage defaults to 'new'", async () => {
+  const out = await salesTools.logToCRM.execute!(
+    { stage: null, customerName: null, score: null, notes: null },
+    opts,
+  );
+  assert.equal(out.stage, "new");
+});
+
 test("scoreLead: reports what's still missing", async () => {
   const out = await salesTools.scoreLead.execute!(
     { homeowner: true, monthlyBill: null, state: null, roofType: null, timeline: null, motivation: null },

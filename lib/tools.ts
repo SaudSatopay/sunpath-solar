@@ -54,7 +54,10 @@ export const salesTools = {
     description:
       "Qualify and score a homeowner lead. Call once you know whether they own the home plus at least their monthly bill or state. Re-call as you learn more.",
     inputSchema: z.object({
-      homeowner: z.boolean().describe("Does the person own (not rent) the home?"),
+      homeowner: z
+        .boolean()
+        .nullish()
+        .describe("Does the person own (not rent) the home? Null if not yet known."),
       monthlyBill: z.coerce
         .number()
         .nullish()
@@ -77,6 +80,7 @@ export const salesTools = {
     }),
     execute: async ({ homeowner, monthlyBill, state, roofType, timeline, motivation }) => {
       const missing: string[] = [];
+      if (homeowner == null) missing.push("homeownership");
       if (monthlyBill == null) missing.push("monthly bill");
       if (!state) missing.push("state");
       if (!timeline) missing.push("timeline");
@@ -97,20 +101,26 @@ export const salesTools = {
       if (motivation) score += 5;
       score = Math.min(100, score);
 
-      const qualified = homeowner && (monthlyBill == null || monthlyBill >= 90);
+      // Tri-state homeownership: true = can qualify, false = hard no,
+      // null = unknown — keep nurturing, don't mislabel as unfit.
+      const qualified = homeowner === true && (monthlyBill == null || monthlyBill >= 90);
       let tier: "hot" | "warm" | "cool" | "unqualified";
-      if (!qualified) tier = "unqualified";
+      if (homeowner === false || (monthlyBill != null && monthlyBill < 90)) tier = "unqualified";
+      else if (!qualified) tier = "cool";
       else if (score >= 70) tier = "hot";
       else if (score >= 45) tier = "warm";
       else tier = "cool";
 
-      const rationale = !homeowner
-        ? "Renters can't install panels — not a fit."
-        : monthlyBill != null && monthlyBill < 90
-          ? "Bill is likely too low for solar to pay off."
-          : tier === "hot"
-            ? "Strong fit — owns the home, meaningful bill, ready to move."
-            : "Potential fit — keep qualifying before quoting.";
+      const rationale =
+        homeowner === false
+          ? "Renters can't install panels — not a fit."
+          : monthlyBill != null && monthlyBill < 90
+            ? "Bill is likely too low for solar to pay off."
+            : homeowner == null
+              ? "Confirm homeownership first — then we can qualify properly."
+              : tier === "hot"
+                ? "Strong fit — owns the home, meaningful bill, ready to move."
+                : "Potential fit — keep qualifying before quoting.";
 
       return { score, tier, qualified, missing, rationale };
     },
@@ -173,16 +183,18 @@ export const salesTools = {
     inputSchema: z.object({
       packageId: z
         .string()
+        .nullish()
         .describe("The SunPath package to quote: starter, home, home-plus, or whole-home."),
       financingId: z
         .string()
+        .nullish()
         .describe("Financing approach: cash, loan, or lease-ppa."),
       state: z.string().nullish().describe("Two-letter US state code, e.g. CA."),
       customerName: z.string().nullish().describe("Customer's first name, if known."),
     }),
     execute: async ({ packageId, financingId, state, customerName }) => {
-      // Fall back to sensible defaults if the model passes an unknown id.
-      const pkg = getPackage(packageId) ?? getPackage("home")!;
+      // Fall back to sensible defaults if the model passes an unknown/missing id.
+      const pkg = getPackage(packageId ?? "") ?? getPackage("home")!;
       const economics = computeEconomics(pkg, state ?? undefined);
       const financing =
         FINANCING_OPTIONS.find((f) => f.id === financingId) ??
@@ -245,6 +257,7 @@ export const salesTools = {
     inputSchema: z.object({
       stage: z
         .string()
+        .nullish()
         .describe("Current pipeline stage: new, qualified, quoted, booked, or disqualified."),
       customerName: z.string().nullish().describe("Customer's name, if known."),
       score: z.coerce.number().nullish().describe("Lead score from scoreLead, if available."),
@@ -253,7 +266,7 @@ export const salesTools = {
     execute: async ({ stage, customerName, score, notes }) => {
       return {
         crmId: shortId("CRM"),
-        stage,
+        stage: stage ?? "new",
         customerName: customerName ?? null,
         score: score ?? null,
         notes: notes ?? null,
