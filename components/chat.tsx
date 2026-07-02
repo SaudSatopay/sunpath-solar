@@ -42,7 +42,7 @@ function deriveStage(reached: Set<string>): number {
   return stage;
 }
 
-export function Chat() {
+export function Chat({ lift = null }: { lift?: number | null }) {
   const { messages, sendMessage, status, error, regenerate } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
@@ -181,7 +181,8 @@ export function Chat() {
 
         {error && (
           <div role="alert" className="flex items-center gap-2 text-sm text-ember">
-            <span>Something went wrong.</span>
+            {/* The API route's onError returns friendly, quota-aware copy — show it. */}
+            <span>{error.message?.trim() || "Something went wrong."}</span>
             <button
               onClick={() => regenerate()}
               className="inline-flex items-center gap-1 rounded-md bg-dusk-800 px-2 py-1 text-cream/80 hover:text-cream"
@@ -230,6 +231,9 @@ export function Chat() {
           >
             conversion eval
           </a>
+          {typeof lift === "number" && lift > 0 && (
+            <span className="text-leaf"> · +{lift} pts measured lift</span>
+          )}
         </p>
       </div>
     </div>
