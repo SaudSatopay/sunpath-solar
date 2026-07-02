@@ -40,6 +40,7 @@ _Not a chat box over an FAQ. An agent that takes real actions — and proves it 
 - [The sales funnel as a state machine](#-the-sales-funnel-as-a-state-machine)
 - [Generative UI](#-generative-ui--the-agent-renders-itself)
 - [Trust by construction](#-trust-by-construction-no-hallucinated-numbers)
+- [Reliability engineering](#-reliability-engineering)
 - [Does it actually sell? The eval](#-does-it-actually-sell-the-conversion-lift-eval)
 - [Tech stack & why](#-tech-stack--why-each-choice)
 - [Project structure](#-project-structure)
@@ -113,7 +114,7 @@ flowchart TB
         Econ["Economics engine<br/>sizing · ITC · payback · 25-yr savings"]
     end
 
-    Model["🧠  Gemini Flash<br/>(swap → Claude Opus 4.8 in 1 line)"]
+    Model["🧠  Gemini Flash — auto-failover → Groq<br/>(env-swap → Claude Opus 4.8)"]
 
     UI -->|"UIMessage stream"| Stream
     Stream <-->|"reason · generate"| Model
@@ -236,6 +237,22 @@ flowchart LR
 
 ---
 
+## 🧯 Reliability engineering
+
+Free-tier LLM infrastructure fails in real, observed ways. This repo treats each failure we actually hit as a product case, not a disclaimer:
+
+| Failure we hit (for real) | Defense in the code |
+|---|---|
+| Gemini free tier: `503 — model experiencing high demand`, mid-conversation | **Automatic provider failover** (`lib/model.ts`): the call transparently retries on Groq _before any tokens stream_ — the homeowner just gets an answer |
+| `429 RESOURCE_EXHAUSTED` (daily quota) | **Quota-aware error UX**: the route maps 429s to friendly, in-character copy and the chat UI surfaces it with a retry — never a raw stack trace |
+| Models emit `null`, `"240"`, or free text where schemas expected enums/numbers (crashed two eval runs) | **Permissive-then-normalize tool schemas** — `.nullish()`, `z.coerce.number()`, fallback ids — locked in by regression tests |
+| Token-per-day caps abort long eval runs | **Resumable eval**: every conversation checkpoints to disk, re-runs skip finished work, and retries honor the provider's `try again in Xs` hint |
+
+- Failover chain: primary (`SUNPATH_PROVIDER`, default Gemini) → **Groq `gpt-oss-120b`** whenever `GROQ_API_KEY` is set. Kill switch: `SUNPATH_FAILOVER=0`.
+- **21 unit tests** (`npm test`) pin the economics engine and the schema hardening — the two places a wrong value would cost trust.
+
+---
+
 ## 📈 Does it actually sell? The conversion-lift eval
 
 Claims are cheap. `eval/run.ts` is a **controlled A/B experiment** that measures whether the agent _converts better than a baseline FAQ bot_.
@@ -269,7 +286,7 @@ It outputs the shape below (run it for live numbers):
 }
 ```
 
-> ⚠️ **Note on free-tier quota:** Gemini's free tier caps ~20 requests/min, and a multi-step agentic eval bursts past that. Generate the headline number on a quota'd key (a paid tier, or the latest **Claude Opus 4.8**, a one-line swap). The harness includes exponential-backoff retry + throttling and a `PERSONA_LIMIT` for smaller, quota-friendly runs.
+> ♻️ **Built to survive free tiers:** the run is **resumable** — every finished conversation checkpoints to `eval/.eval-cache.json`, so a quota interruption resumes instead of restarting, and retries honor the provider's `try again in Xs` hint. The harness is provider-agnostic (`AGENT_PROVIDER` / `LEAD_PROVIDER` / `AGENT_MODEL` / `LEAD_MODEL`), so the full 32-conversation A/B runs free on Groq; `PERSONA_LIMIT` supports smaller smoke runs.
 
 ---
 
@@ -282,7 +299,7 @@ Every dependency is bleeding-edge **on purpose** — and chosen for a reason, no
 | **Framework** | Next.js **16** (App Router, Turbopack) · React **19.2** | Streaming-native route handlers; Server Components; one runtime for API + UI |
 | **Agent runtime** | Vercel **AI SDK v7** (`streamText`, `stopWhen: stepCountIs`, `convertToModelMessages`) | First-class multi-step tool-calling + **provider-agnostic** (swap models in 1 line) |
 | **Generative UI** | AI SDK UI message stream → typed `tool-*` parts → React | Tool calls become **interactive components**, not invisible plumbing |
-| **Model** | **Gemini Flash** (`gemini-flash-latest`, free) · swap → **Claude Opus 4.8** | Strong tool-calling at zero cost to build; trivially upgraded for the final |
+| **Model** | **Gemini Flash** · auto-failover → **Groq `gpt-oss-120b`** · env-swap → **Claude Opus 4.8** | Strong tool-calling at zero cost, resilient to free-tier outages, trivially upgraded |
 | **Schemas** | **Zod 4** | Typed tool inputs the model must satisfy; doubles as runtime validation |
 | **Styling** | **Tailwind v4** (`@theme`) + **Motion 12** | A custom design system, not a component library; tasteful, GPU-friendly motion |
 | **Icons / type** | lucide-react · **Fraunces** display + Geist | Distinctive, non-generic visual identity |
@@ -297,7 +314,8 @@ Every dependency is bleeding-edge **on purpose** — and chosen for a reason, no
 sunpath/
 ├── app/
 │   ├── api/chat/route.ts      # the agent loop — streamText + tools + multi-step
-│   ├── page.tsx               # the chat experience
+│   ├── page.tsx               # the chat experience (+ measured-lift badge)
+│   ├── opengraph-image.tsx    # generated social share card (next/og)
 │   └── results/page.tsx       # conversion-lift dashboard (reads eval/results.json)
 ├── components/
 │   ├── chat.tsx               # useChat client · message + tool-part rendering · funnel rail
@@ -306,13 +324,16 @@ sunpath/
 │   └── atmosphere.tsx         # animated dusk + solar-glow backdrop
 ├── lib/
 │   ├── agent-prompt.ts        # Sunny's system prompt (composed from the KB)
-│   ├── tools.ts               # the 6 agent tools (Zod schemas + execute)
+│   ├── model.ts               # provider selection + automatic failover chain
+│   ├── tools.ts               # the 6 agent tools (hardened Zod schemas + execute)
+│   ├── tools.test.ts          # regression tests for the schema hardening
 │   ├── solar-data.ts          # catalog · incentives · financing · objections · economics
+│   ├── solar-data.test.ts     # economics engine unit tests
 │   ├── tool-types.ts          # shared types mirroring tool outputs
 │   └── utils.ts               # formatting + cn()
 └── eval/
     ├── personas.ts            # 16 simulated leads (ground-truth qualified flag)
-    └── run.ts                 # the conversion-lift harness
+    └── run.ts                 # the conversion-lift harness (resumable, provider-agnostic)
 ```
 
 ---
@@ -329,11 +350,15 @@ cp .env.example .env.local      # paste your key as GOOGLE_GENERATIVE_AI_API_KEY
 # 3. Run
 npm run dev                     # → http://localhost:3000
 
-# 4. (optional) generate the conversion-lift numbers
-npm run eval                    # → populates /results
+# 4. (optional) run the test suite — economics engine + tool-schema hardening
+npm test
+
+# 5. (optional) generate the conversion-lift numbers — free on Groq (console.groq.com)
+#    add GROQ_API_KEY to .env.local, then:
+AGENT_PROVIDER=groq LEAD_PROVIDER=groq LEAD_MODEL=llama-3.3-70b-versatile npm run eval
 ```
 
-Build: `npm run build`. Requires `GOOGLE_GENERATIVE_AI_API_KEY`.
+Build: `npm run build`. The app needs `GOOGLE_GENERATIVE_AI_API_KEY` (default provider); adding `GROQ_API_KEY` enables automatic failover.
 
 ---
 
@@ -343,7 +368,7 @@ GitHub-linked **Vercel** import (auto-redeploys on push):
 
 1. **[vercel.com/new](https://vercel.com/new)** → import this repo.
 2. Framework auto-detects **Next.js** — keep defaults.
-3. **Add the env var** `GOOGLE_GENERATIVE_AI_API_KEY` (the key is _not_ in the repo, by design).
+3. **Add env vars**: `GOOGLE_GENERATIVE_AI_API_KEY` (primary model) and, optionally, `GROQ_API_KEY` (turns on automatic failover). Keys are _not_ in the repo, by design.
 4. **Deploy** → public URL in ~90s.
 
 ---
@@ -372,9 +397,9 @@ A deliberate, non-generic aesthetic — no Inter, no purple-on-white:
 
 ## 🛣 Roadmap
 
-- [ ] Publish the headline **conversion-lift number** on `/results` (run the eval on a quota'd key)
+- [ ] Publish the headline **conversion-lift number** on `/results` (full A/B run in progress)
 - [ ] 2-minute **demo video** (cards streaming → the metric)
-- [ ] Swap the final to **Claude Opus 4.8** for maximum capability
+- [ ] Final demo on **Claude Opus 4.8** (already wired — `SUNPATH_PROVIDER=anthropic`)
 - [ ] **Bilingual** (AR/EN) toggle — the agent already replies in the user's language
 - [ ] Voice input (Web Speech) for a hands-free funnel
 - [ ] Real CRM / calendar integration behind the `logToCRM` / `bookSurvey` tools
