@@ -74,6 +74,11 @@ export function ToolCard({ part }: { part: ToolPart }) {
   if (part.state !== "output-available" || part.output == null) {
     return <RunningCard name={name} />;
   }
+  // "Needs info" signals steer the agent to ask a question — the reply text
+  // carries it, so there's no card to render.
+  if ((part.output as { needsInfo?: string }).needsInfo) {
+    return null;
+  }
 
   switch (name) {
     case "scoreLead":

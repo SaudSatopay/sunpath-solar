@@ -74,6 +74,19 @@ test("generateQuote: unknown package/financing ids fall back instead of crashing
   assert.ok(out.economics.netPrice > 0);
 });
 
+test("recommendSystem: missing bill steers the agent instead of crashing (live regression)", async () => {
+  const out = await salesTools.recommendSystem.execute!({ monthlyBill: null, state: null }, opts);
+  assert.equal((out as { needsInfo?: string }).needsInfo, "monthlyBill");
+});
+
+test("bookSurvey: refuses to book without a name + contact", async () => {
+  const out = await salesTools.bookSurvey.execute!(
+    { customerName: null, contact: "  ", preferredDate: null, packageId: null },
+    opts,
+  );
+  assert.equal((out as { needsInfo?: string }).needsInfo, "contact");
+});
+
 test("bookSurvey: books with just name + contact", async () => {
   const out = await salesTools.bookSurvey.execute!(
     { customerName: "Ana", contact: "ana@example.com", preferredDate: null, packageId: null },

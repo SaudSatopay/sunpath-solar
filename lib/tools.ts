@@ -120,10 +120,22 @@ export const salesTools = {
     description:
       "Recommend the right-sized SunPath package for a homeowner and return exact economics (net price after incentives, payback, savings). Requires their monthly bill.",
     inputSchema: z.object({
-      monthlyBill: z.coerce.number().describe("Average monthly electricity bill in USD."),
+      monthlyBill: z.coerce
+        .number()
+        .nullish()
+        .describe("Average monthly electricity bill in USD (required to size a system)."),
       state: z.string().nullish().describe("Two-letter US state code, e.g. CA."),
     }),
     execute: async ({ monthlyBill, state }) => {
+      // Steer the agent instead of crashing the turn (observed: models call
+      // this before collecting the bill).
+      if (monthlyBill == null) {
+        return {
+          needsInfo: "monthlyBill",
+          message:
+            "No bill provided — ask for their average monthly electricity bill, then call recommendSystem again.",
+        } as const;
+      }
       const pkg = getPackage(recommendPackageId(monthlyBill))!;
       const economics = computeEconomics(pkg, state ?? undefined);
       return {
@@ -195,8 +207,8 @@ export const salesTools = {
     description:
       "Book a free on-site survey for a qualified, interested homeowner. Collect their name and a contact (email or phone) first. This is the conversion.",
     inputSchema: z.object({
-      customerName: z.string().describe("Customer's name."),
-      contact: z.string().describe("Email address or phone number."),
+      customerName: z.string().nullish().describe("Customer's name."),
+      contact: z.string().nullish().describe("Email address or phone number."),
       preferredDate: z
         .string()
         .nullish()
@@ -207,6 +219,14 @@ export const salesTools = {
         .describe("Package of interest, if chosen: starter, home, home-plus, or whole-home."),
     }),
     execute: async ({ customerName, contact, preferredDate, packageId }) => {
+      // Never book without a name + contact — steer the agent to collect them.
+      if (!customerName?.trim() || !contact?.trim()) {
+        return {
+          needsInfo: "contact",
+          message:
+            "Missing the customer's name and/or contact — collect both, then call bookSurvey again.",
+        } as const;
+      }
       const pkg = packageId ? getPackage(packageId) : undefined;
       return {
         surveyId: shortId("SURVEY"),
