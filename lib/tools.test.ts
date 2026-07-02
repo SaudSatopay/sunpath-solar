@@ -9,7 +9,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { salesTools } from "./tools";
+import { salesTools, repairGarbledToolCall } from "./tools";
 
 /** Minimal ToolCallOptions for invoking execute() directly in tests. */
 const opts = { toolCallId: "test", messages: [] } as never;
@@ -96,6 +96,26 @@ test("bookSurvey: books with just name + contact", async () => {
   assert.equal(out.package, null);
   assert.equal(out.scheduled, "to be confirmed by our team");
   assert.match(out.surveyId, /^SURVEY-/);
+});
+
+/* ------------------------------------------------------------------ */
+/* Tool-call repair                                                   */
+/* ------------------------------------------------------------------ */
+
+test("repairGarbledToolCall: strips Harmony-token leaks from tool names (live regression)", async () => {
+  // Observed on Groq gpt-oss: 'logToCRM<|channel|>commentary' → NoSuchToolError.
+  const repaired = await repairGarbledToolCall({
+    toolCall: { type: "tool-call", toolCallId: "t1", toolName: "logToCRM<|channel|>commentary", input: "{}" },
+    tools: salesTools,
+  } as never);
+  assert.equal(repaired?.toolName, "logToCRM");
+
+  // A genuinely unknown tool stays failed — real bugs must still surface.
+  const unrepairable = await repairGarbledToolCall({
+    toolCall: { type: "tool-call", toolCallId: "t2", toolName: "notATool<|x|>y", input: "{}" },
+    tools: salesTools,
+  } as never);
+  assert.equal(unrepairable, null);
 });
 
 /* ------------------------------------------------------------------ */

@@ -5,7 +5,7 @@ import {
   APICallError,
   type UIMessage,
 } from "ai";
-import { salesTools } from "@/lib/tools";
+import { salesTools, repairGarbledToolCall } from "@/lib/tools";
 import { SYSTEM_PROMPT } from "@/lib/agent-prompt";
 import { salesModel } from "@/lib/model";
 
@@ -51,6 +51,8 @@ export async function POST(req: Request): Promise<Response> {
     tools: salesTools,
     // The agent may chain several tool calls in one turn before replying.
     stopWhen: stepCountIs(10),
+    // Some open models garble tool names (Harmony-token leaks) — repair them.
+    experimental_repairToolCall: repairGarbledToolCall,
   });
 
   return result.toUIMessageStreamResponse({

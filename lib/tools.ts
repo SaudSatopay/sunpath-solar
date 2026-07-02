@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { tool, type ToolCallRepairFunction } from "ai";
 import { z } from "zod";
 import {
   PACKAGES,
@@ -278,3 +278,21 @@ export const salesTools = {
 
 export type SalesTools = typeof salesTools;
 export const PACKAGE_ID_LIST = PACKAGES.map((p) => p.id);
+
+/**
+ * Repair garbled tool names. Observed live: gpt-oss models on Groq leak
+ * Harmony-format tokens into the tool name ("logToCRM<|channel|>commentary"),
+ * which fails with NoSuchToolError. Strip the leak and re-target the real
+ * tool; anything else stays failed (return null) so real bugs still surface.
+ */
+export const repairGarbledToolCall: ToolCallRepairFunction<SalesTools> = async ({
+  toolCall,
+  tools,
+}) => {
+  const cleaned = toolCall.toolName.split("<|")[0].trim();
+  if (cleaned !== toolCall.toolName && cleaned in tools) {
+    console.warn(`[tools] repaired garbled tool name "${toolCall.toolName}" → "${cleaned}"`);
+    return { ...toolCall, toolName: cleaned };
+  }
+  return null;
+};

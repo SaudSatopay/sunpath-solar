@@ -27,7 +27,7 @@ import { generateText, stepCountIs } from "ai";
 import { makeModel, DEFAULT_MODEL, type Provider } from "../lib/model";
 import { PERSONAS, type LeadPersona } from "./personas";
 import { SYSTEM_PROMPT } from "../lib/agent-prompt";
-import { salesTools } from "../lib/tools";
+import { salesTools, repairGarbledToolCall } from "../lib/tools";
 
 const asProvider = (v: string | undefined, d: Provider): Provider =>
   v === "google" || v === "anthropic" || v === "groq" ? v : d;
@@ -83,7 +83,11 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 8): Promise<T> {
       return await fn();
     } catch (err) {
       const msg = (err as Error)?.message ?? "";
-      const retryable = /rate|quota|429|RESOURCE_EXHAUSTED|overload|503|500|high demand|try again/i.test(msg);
+      // Tool-call garbles are stochastic — a fresh attempt usually generates clean.
+      const retryable =
+        /rate|quota|429|RESOURCE_EXHAUSTED|overload|503|500|high demand|try again|not in request\.tools|tool call validation/i.test(
+          msg,
+        );
       if (attempt === tries - 1 || !retryable) throw err;
       const hinted = parseRetryDelayMs(msg);
       // Wait what the provider asked for (+1s of slack), capped at 10 minutes.
@@ -159,6 +163,7 @@ async function agentReply(arm: Arm, transcript: Turn[]) {
             messages,
             tools: salesTools,
             stopWhen: stepCountIs(8),
+            experimental_repairToolCall: repairGarbledToolCall,
           }),
         )
       : await withRetry(() =>
