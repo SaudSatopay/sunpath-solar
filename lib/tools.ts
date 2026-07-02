@@ -15,8 +15,11 @@ import {
 /* Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-const PACKAGE_IDS = ["starter", "home", "home-plus", "whole-home"] as const;
-const FINANCING_IDS = ["cash", "loan", "lease-ppa"] as const;
+// Tool inputs are deliberately permissive: LLMs frequently emit explicit
+// `null` for "not provided", send numbers as strings, or pass free-text where
+// a strict enum is expected. We accept that at the schema boundary (.nullish(),
+// z.coerce.number(), z.string() with the valid values documented) and normalize
+// in the handler, so a stray value never crashes a tool call.
 
 function shortId(prefix: string): string {
   // Server-side only; crypto is available in the Node/Edge runtime.
@@ -52,22 +55,24 @@ export const salesTools = {
       "Qualify and score a homeowner lead. Call once you know whether they own the home plus at least their monthly bill or state. Re-call as you learn more.",
     inputSchema: z.object({
       homeowner: z.boolean().describe("Does the person own (not rent) the home?"),
-      monthlyBill: z
+      monthlyBill: z.coerce
         .number()
-        .optional()
+        .nullish()
         .describe("Average monthly electricity bill in USD."),
-      state: z.string().optional().describe("Two-letter US state code, e.g. CA."),
+      state: z.string().nullish().describe("Two-letter US state code, e.g. CA."),
       roofType: z
-        .enum(["asphalt-shingle", "metal", "tile", "flat", "unsure"])
-        .optional()
-        .describe("Roof material, if known."),
+        .string()
+        .nullish()
+        .describe("Roof material if known: asphalt-shingle, metal, tile, flat, or unsure."),
       timeline: z
-        .enum(["now", "few-months", "this-year", "researching", "unsure"])
-        .optional()
-        .describe("How soon they might move forward."),
+        .string()
+        .nullish()
+        .describe(
+          "How soon they might move forward: now, few-months, this-year, researching, or unsure.",
+        ),
       motivation: z
         .string()
-        .optional()
+        .nullish()
         .describe("Why they're interested (savings, outages, EV, green, etc.)."),
     }),
     execute: async ({ homeowner, monthlyBill, state, roofType, timeline, motivation }) => {
@@ -115,12 +120,12 @@ export const salesTools = {
     description:
       "Recommend the right-sized SunPath package for a homeowner and return exact economics (net price after incentives, payback, savings). Requires their monthly bill.",
     inputSchema: z.object({
-      monthlyBill: z.number().describe("Average monthly electricity bill in USD."),
-      state: z.string().optional().describe("Two-letter US state code, e.g. CA."),
+      monthlyBill: z.coerce.number().describe("Average monthly electricity bill in USD."),
+      state: z.string().nullish().describe("Two-letter US state code, e.g. CA."),
     }),
     execute: async ({ monthlyBill, state }) => {
       const pkg = getPackage(recommendPackageId(monthlyBill))!;
-      const economics = computeEconomics(pkg, state);
+      const economics = computeEconomics(pkg, state ?? undefined);
       return {
         package: packageSummary(pkg),
         tagline: pkg.tagline,
@@ -134,10 +139,10 @@ export const salesTools = {
     description:
       "Look up the solar incentives a homeowner qualifies for: the federal tax credit plus any state-specific programs.",
     inputSchema: z.object({
-      state: z.string().optional().describe("Two-letter US state code, e.g. CA."),
+      state: z.string().nullish().describe("Two-letter US state code, e.g. CA."),
     }),
     execute: async ({ state }) => {
-      const incentive = getStateIncentive(state);
+      const incentive = getStateIncentive(state ?? undefined);
       return {
         federalPct: Math.round(FEDERAL_ITC * 100),
         federalLabel: "Federal Residential Clean Energy Credit (ITC)",
@@ -154,19 +159,24 @@ export const salesTools = {
     description:
       "Generate a formal quote for an interested homeowner. Call after recommending a system and agreeing on a financing approach.",
     inputSchema: z.object({
-      packageId: z.enum(PACKAGE_IDS).describe("The SunPath package to quote."),
+      packageId: z
+        .string()
+        .describe("The SunPath package to quote: starter, home, home-plus, or whole-home."),
       financingId: z
-        .enum(FINANCING_IDS)
+        .string()
         .describe("Financing approach: cash, loan, or lease-ppa."),
-      state: z.string().optional().describe("Two-letter US state code, e.g. CA."),
-      customerName: z.string().optional().describe("Customer's first name, if known."),
+      state: z.string().nullish().describe("Two-letter US state code, e.g. CA."),
+      customerName: z.string().nullish().describe("Customer's first name, if known."),
     }),
     execute: async ({ packageId, financingId, state, customerName }) => {
-      const pkg = getPackage(packageId)!;
-      const economics = computeEconomics(pkg, state);
-      const financing = FINANCING_OPTIONS.find((f) => f.id === financingId)!;
+      // Fall back to sensible defaults if the model passes an unknown id.
+      const pkg = getPackage(packageId) ?? getPackage("home")!;
+      const economics = computeEconomics(pkg, state ?? undefined);
+      const financing =
+        FINANCING_OPTIONS.find((f) => f.id === financingId) ??
+        FINANCING_OPTIONS.find((f) => f.id === "loan")!;
       const monthlyLoanEstimate =
-        financingId === "loan" ? monthlyPayment(economics.netPrice, 0.0649, 25) : null;
+        financing.id === "loan" ? monthlyPayment(economics.netPrice, 0.0649, 25) : null;
 
       return {
         quoteId: shortId("SP"),
@@ -189,9 +199,12 @@ export const salesTools = {
       contact: z.string().describe("Email address or phone number."),
       preferredDate: z
         .string()
-        .optional()
+        .nullish()
         .describe("Preferred date/time in the customer's words."),
-      packageId: z.enum(PACKAGE_IDS).optional().describe("Package of interest, if chosen."),
+      packageId: z
+        .string()
+        .nullish()
+        .describe("Package of interest, if chosen: starter, home, home-plus, or whole-home."),
     }),
     execute: async ({ customerName, contact, preferredDate, packageId }) => {
       const pkg = packageId ? getPackage(packageId) : undefined;
@@ -211,11 +224,11 @@ export const salesTools = {
       "Record the lead and outcome in the CRM after a meaningful step (qualified, quoted, booked, or disqualified).",
     inputSchema: z.object({
       stage: z
-        .enum(["new", "qualified", "quoted", "booked", "disqualified"])
-        .describe("Current pipeline stage."),
-      customerName: z.string().optional().describe("Customer's name, if known."),
-      score: z.number().optional().describe("Lead score from scoreLead, if available."),
-      notes: z.string().optional().describe("Short summary of the interaction."),
+        .string()
+        .describe("Current pipeline stage: new, qualified, quoted, booked, or disqualified."),
+      customerName: z.string().nullish().describe("Customer's name, if known."),
+      score: z.coerce.number().nullish().describe("Lead score from scoreLead, if available."),
+      notes: z.string().nullish().describe("Short summary of the interaction."),
     }),
     execute: async ({ stage, customerName, score, notes }) => {
       return {
