@@ -30,7 +30,7 @@ import { SYSTEM_PROMPT } from "../lib/agent-prompt";
 import { salesTools } from "../lib/tools";
 
 const asProvider = (v: string | undefined, d: Provider): Provider =>
-  v === "google" || v === "anthropic" ? v : d;
+  v === "google" || v === "anthropic" || v === "groq" ? v : d;
 
 const AGENT_PROVIDER = asProvider(process.env.AGENT_PROVIDER, "google");
 const LEAD_PROVIDER = asProvider(process.env.LEAD_PROVIDER, "google");
@@ -60,17 +60,38 @@ type Turn = { role: "agent" | "lead"; content: string };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Retry with exponential backoff on rate-limit / overload errors (free tier). */
-async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
+/** Parse "try again in 1m7.39s" / "…in 45s" hints from provider rate-limit errors. */
+function parseRetryDelayMs(msg: string): number | null {
+  const m = msg.match(/try again in\s+([\dhms.\s]+)/i);
+  if (!m) return null;
+  let ms = 0;
+  const h = m[1].match(/([\d.]+)\s*h/);
+  if (h) ms += parseFloat(h[1]) * 3_600_000;
+  const min = m[1].match(/([\d.]+)\s*m(?!s)/);
+  if (min) ms += parseFloat(min[1]) * 60_000;
+  const s = m[1].match(/([\d.]+)\s*s/);
+  if (s) ms += parseFloat(s[1]) * 1_000;
+  return ms > 0 ? ms : null;
+}
+
+/** Retry with backoff on rate-limit / overload errors, honoring the provider's
+ *  retry-after hint (free tiers meter tokens per day and trickle them back). */
+async function withRetry<T>(fn: () => Promise<T>, tries = 8): Promise<T> {
   let delay = 2000;
   for (let attempt = 0; attempt < tries; attempt++) {
     try {
       return await fn();
     } catch (err) {
       const msg = (err as Error)?.message ?? "";
-      const retryable = /rate|quota|429|RESOURCE_EXHAUSTED|overload|503|500/i.test(msg);
+      const retryable = /rate|quota|429|RESOURCE_EXHAUSTED|overload|503|500|high demand|try again/i.test(msg);
       if (attempt === tries - 1 || !retryable) throw err;
-      await sleep(delay);
+      const hinted = parseRetryDelayMs(msg);
+      // Wait what the provider asked for (+1s of slack), capped at 10 minutes.
+      const wait = Math.min(hinted != null ? hinted + 1_000 : delay, 600_000);
+      if (wait > 10_000) {
+        console.log(`    …rate-limited, waiting ${Math.round(wait / 1000)}s (attempt ${attempt + 1}/${tries})`);
+      }
+      await sleep(wait);
       delay = Math.min(delay * 2, 30_000);
     }
   }
@@ -235,7 +256,8 @@ async function main() {
   outer: for (const arm of ARMS) {
     console.log(`Arm — ${arm}:`);
     for (const p of LEADS) {
-      const key = `${arm}:${p.id}`;
+      // Namespace by model config so a provider switch can't reuse stale outcomes.
+      const key = `${AGENT_LABEL}|${LEAD_LABEL}|${arm}|${p.id}`;
       const cached = !!cache[key];
       try {
         let cell = cache[key];
