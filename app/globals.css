@@ -118,6 +118,17 @@ body {
   );
 }
 
+/* Hide a scroll container's scrollbar (scrolling still works). The chat
+   column is centered, so its scrollbar would float mid-page — the fade mask
+   plays the "more above" affordance instead. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Chat scroll: melt messages into the atmosphere at both edges. */
 .fade-scroll {
   mask-image: linear-gradient(

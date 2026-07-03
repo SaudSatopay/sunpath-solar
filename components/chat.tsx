@@ -114,7 +114,7 @@ export function Chat({ lift = null }: { lift?: number | null }) {
 
       {/* Messages */}
       <div
-        className="fade-scroll flex-1 space-y-5 overflow-y-auto py-6"
+        className="fade-scroll no-scrollbar flex-1 space-y-5 overflow-y-auto py-6"
         role="log"
         aria-live="polite"
         aria-relevant="additions text"
