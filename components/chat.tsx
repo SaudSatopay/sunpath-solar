@@ -4,19 +4,19 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { motion } from "motion/react";
-import { ArrowUp, RefreshCw } from "lucide-react";
+import { ArrowUp, RefreshCw, Coins, Home as HomeIcon, Percent, BatteryCharging } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ToolCard, type ToolPart } from "./tool-cards";
 import { StageRail } from "./stage-rail";
 
 const SUGGESTIONS = [
-  "How much could I save?",
-  "Is my home a good fit for solar?",
-  "What's the federal tax credit?",
-  "I want backup power during outages",
-];
+  { label: "How much could I save?", icon: Coins },
+  { label: "Is my home a good fit for solar?", icon: HomeIcon },
+  { label: "What's the federal tax credit?", icon: Percent },
+  { label: "I want backup power during outages", icon: BatteryCharging },
+] as const;
 
-function SunMark({ size = 28 }: { size?: number }) {
+function SunMark({ size = 28, halo = false }: { size?: number; halo?: boolean }) {
   return (
     <span
       aria-hidden
@@ -29,6 +29,12 @@ function SunMark({ size = 28 }: { size?: number }) {
       }}
     >
       <span className="absolute inset-0 rounded-full ring-1 ring-inset ring-white/20" />
+      {halo && (
+        <span
+          className="absolute -inset-[5px] rounded-full border border-dashed border-sun/30"
+          style={{ animation: "haloSpin 16s linear infinite" }}
+        />
+      )}
     </span>
   );
 }
@@ -85,9 +91,10 @@ export function Chat({ lift = null }: { lift?: number | null }) {
   return (
     <div className="mx-auto flex h-dvh w-full max-w-2xl flex-col px-4">
       {/* Header */}
-      <header className="flex items-center justify-between gap-4 border-b border-line/40 py-4">
+      <header className="relative flex items-center justify-between gap-4 border-b border-line/40 py-4">
+        <span aria-hidden className="flare-line absolute inset-x-0 -bottom-px opacity-60" />
         <div className="flex items-center gap-2.5">
-          <SunMark />
+          <SunMark halo />
           <div className="leading-none">
             <div className="font-display text-lg text-cream">SunPath</div>
             <div className="text-[10px] uppercase tracking-[0.22em] text-faint">Solar</div>
@@ -98,7 +105,7 @@ export function Chat({ lift = null }: { lift?: number | null }) {
             <StageRail stage={stage} />
           </div>
         ) : (
-          <span className="hidden items-center gap-1.5 text-[11px] text-dim sm:inline-flex">
+          <span className="glass hidden items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] text-dim sm:inline-flex">
             <span className="h-1.5 w-1.5 rounded-full bg-leaf" style={{ boxShadow: "0 0 8px var(--color-leaf)" }} />
             Sunny is online
           </span>
@@ -107,7 +114,7 @@ export function Chat({ lift = null }: { lift?: number | null }) {
 
       {/* Messages */}
       <div
-        className="flex-1 space-y-5 overflow-y-auto py-6"
+        className="fade-scroll flex-1 space-y-5 overflow-y-auto py-6"
         role="log"
         aria-live="polite"
         aria-relevant="additions text"
@@ -140,8 +147,8 @@ export function Chat({ lift = null }: { lift?: number | null }) {
                         className={cn(
                           "rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed",
                           m.role === "user"
-                            ? "rounded-br-md bg-gradient-to-br from-sun to-sun-bright text-dusk-950"
-                            : "glass rounded-bl-md text-cream/90",
+                            ? "rounded-br-md bg-gradient-to-br from-sun to-sun-bright text-dusk-950 shadow-[0_10px_30px_-14px_rgba(255,140,60,0.6)] ring-1 ring-inset ring-white/25"
+                            : "glass sheen relative rounded-bl-md text-cream/90",
                         )}
                       >
                         {part.text}
@@ -172,7 +179,10 @@ export function Chat({ lift = null }: { lift?: number | null }) {
                 <span
                   key={i}
                   className="h-1.5 w-1.5 rounded-full bg-sun"
-                  style={{ animation: `blink 1.2s ease-in-out ${i * 0.18}s infinite` }}
+                  style={{
+                    animation: `blink 1.2s ease-in-out ${i * 0.18}s infinite`,
+                    boxShadow: "0 0 8px rgba(255,178,62,0.8)",
+                  }}
                 />
               ))}
             </div>
@@ -196,10 +206,10 @@ export function Chat({ lift = null }: { lift?: number | null }) {
       </div>
 
       {/* Composer */}
-      <div className="pb-5 pt-2">
+      <div className="relative pb-5 pt-2">
         <form
           onSubmit={onSubmit}
-          className="glass flex items-end gap-2 rounded-2xl p-2 focus-within:border-sun/40 focus-within:shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-sun)_25%,transparent)]"
+          className="group glass sheen relative flex items-end gap-2 rounded-2xl p-2 focus-within:border-sun/40 focus-within:shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-sun)_25%,transparent)]"
         >
           <input
             value={input}
@@ -217,11 +227,17 @@ export function Chat({ lift = null }: { lift?: number | null }) {
             type="submit"
             disabled={busy || !input.trim()}
             whileTap={{ scale: 0.92 }}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-sun to-ember text-dusk-950 transition-opacity disabled:opacity-35"
+            whileHover={{ scale: 1.06 }}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-sun to-ember text-dusk-950 shadow-[0_8px_24px_-10px_rgba(255,106,61,0.7)] transition-[opacity,filter] hover:brightness-110 disabled:opacity-35"
             aria-label="Send"
           >
             <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
           </motion.button>
+          {/* ember under-glow that wakes when the composer is focused */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-x-8 top-full h-8 rounded-full bg-ember/15 opacity-0 blur-2xl transition-opacity duration-500 group-focus-within:opacity-100"
+          />
         </form>
         <p className="mt-2 text-center text-[10px] text-faint">
           Sunny is an AI demo · estimates confirmed at survey ·{" "}
@@ -247,15 +263,34 @@ function Empty({ onPick }: { onPick: (text: string) => void }) {
         initial={{ scale: 0.6, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ type: "spring", stiffness: 200, damping: 16 }}
+        className="relative"
         style={{ animation: "floatY 6s ease-in-out infinite" }}
       >
+        {/* dawn glow + slow orbiting ring around the sun */}
+        <span
+          aria-hidden
+          className="absolute -inset-8 rounded-full bg-[radial-gradient(circle,rgba(255,178,62,0.25),transparent_65%)] blur-md"
+        />
+        <span
+          aria-hidden
+          className="absolute -inset-4 rounded-full border border-dashed border-sun/25"
+          style={{ animation: "haloSpin 22s linear infinite" }}
+        />
         <SunMark size={56} />
+      </motion.div>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.05 }}
+        className="mt-8 text-[10px] uppercase tracking-[0.3em] text-faint"
+      >
+        SunPath Solar · AI consultant
       </motion.div>
       <motion.h1
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="mt-6 font-display text-3xl text-cream"
+        className="mt-3 font-display text-3xl text-cream"
       >
         Hi, I&apos;m <span className="text-gradient-sun italic">Sunny</span>
       </motion.h1>
@@ -268,22 +303,21 @@ function Empty({ onPick }: { onPick: (text: string) => void }) {
         Tell me about your home and energy bill — I&apos;ll size a system, run the real
         numbers, and book your free survey.
       </motion.p>
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.26 }}
-        className="mt-7 flex max-w-md flex-wrap justify-center gap-2"
-      >
-        {SUGGESTIONS.map((s) => (
-          <button
-            key={s}
-            onClick={() => onPick(s)}
-            className="glass rounded-full px-3.5 py-2 text-[13px] text-cream/85 transition-colors hover:border-sun/40 hover:text-cream"
+      <div className="mt-7 flex max-w-md flex-wrap justify-center gap-2">
+        {SUGGESTIONS.map((s, i) => (
+          <motion.button
+            key={s.label}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.28 + i * 0.07 }}
+            onClick={() => onPick(s.label)}
+            className="group glass inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] text-cream/85 transition-all duration-200 hover:-translate-y-0.5 hover:border-sun/40 hover:text-cream"
           >
-            {s}
-          </button>
+            <s.icon aria-hidden className="h-3.5 w-3.5 text-sun/70 transition-colors group-hover:text-sun" />
+            {s.label}
+          </motion.button>
         ))}
-      </motion.div>
+      </div>
     </div>
   );
 }

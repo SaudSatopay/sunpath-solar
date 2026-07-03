@@ -97,6 +97,43 @@ body {
   border-color: color-mix(in oklab, var(--color-line) 65%, transparent);
 }
 
+/* Top-edge light catch for glass surfaces (parent must be positioned). */
+.sheen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(243, 237, 226, 0.07), transparent 30%);
+}
+
+/* Hairline that flares warm at its center. */
+.flare-line {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--color-sun) 55%, transparent) 50%,
+    transparent
+  );
+}
+
+/* Chat scroll: melt messages into the atmosphere at both edges. */
+.fade-scroll {
+  mask-image: linear-gradient(
+    180deg,
+    transparent 0,
+    #000 32px,
+    #000 calc(100% - 18px),
+    transparent 100%
+  );
+}
+
+input,
+textarea {
+  caret-color: var(--color-sun);
+}
+
 /* Grain overlay */
 .grain::after {
   content: "";
@@ -134,8 +171,28 @@ body {
   0%, 100% { opacity: 0.25; }
   50% { opacity: 1; }
 }
+@keyframes haloSpin {
+  to { transform: rotate(360deg); }
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.85; }
+}
+@keyframes ringBurst {
+  from { opacity: 0.7; transform: scale(0.55); }
+  to { opacity: 0; transform: scale(2); }
+}
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.6); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dotPulse {
+  0%, 100% { box-shadow: 0 0 6px 0 color-mix(in oklab, var(--color-sun) 70%, transparent); }
+  50% { box-shadow: 0 0 13px 2px color-mix(in oklab, var(--color-sun) 55%, transparent); }
+}
 
 .anim-msg-in { animation: msgIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.anim-rise { animation: riseIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 .skeleton {
   background: linear-gradient(

@@ -48,12 +48,15 @@ export default async function ResultsPage() {
           <ArrowLeft className="h-4 w-4" /> Back to Sunny
         </Link>
 
-        <h1 className="mt-6 font-display text-3xl text-cream">Conversion eval</h1>
+        <h1 className="mt-6 font-display text-3xl text-cream">
+          Conversion <span className="text-gradient-sun italic">eval</span>
+        </h1>
         <p className="mt-1.5 max-w-lg text-[15px] leading-relaxed text-dim">
           Every lead in <code className="font-mono text-cream/80">eval/personas.ts</code> is
           played against two reps — Sunny (agentic, with tools) and a plain FAQ bot — using the
           same model and the same lead simulator. Only the rep differs.
         </p>
+        <div aria-hidden className="flare-line mt-6 opacity-50" />
 
         {data ? <Report data={data} /> : <EmptyState />}
       </div>
@@ -67,7 +70,7 @@ function EmptyState() {
   return (
     <div className="mt-8 space-y-4">
       {/* Methodology — the rigor lands even before numbers exist */}
-      <div className="glass rounded-[var(--radius-card)] p-6">
+      <div className="glass sheen relative rounded-[var(--radius-card)] p-6">
         <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-dim">
           <Users className="h-4 w-4 text-sun" /> The test
         </div>
@@ -100,7 +103,7 @@ function EmptyState() {
       </div>
 
       {/* What's scored */}
-      <div className="glass rounded-[var(--radius-card)] p-6">
+      <div className="glass sheen relative rounded-[var(--radius-card)] p-6">
         <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-dim">
           <Target className="h-4 w-4 text-leaf" /> What we score
         </div>
@@ -121,7 +124,7 @@ function EmptyState() {
       </div>
 
       {/* Run it */}
-      <div className="glass rounded-[var(--radius-card)] p-6">
+      <div className="glass sheen relative rounded-[var(--radius-card)] p-6">
         <p className="text-cream/90">No results yet.</p>
         <p className="mt-2 text-sm text-dim">
           Add an API key to <code className="font-mono text-cream/80">.env.local</code>, then
@@ -140,12 +143,16 @@ function Report({ data }: { data: Results }) {
   return (
     <>
       {/* Hero lift */}
-      <div className="glass glass-sun mt-8 overflow-hidden rounded-[var(--radius-card)] p-6">
+      <div className="glass glass-sun sheen relative mt-8 overflow-hidden rounded-[var(--radius-card)] p-6">
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full bg-leaf/15 blur-3xl"
+        />
         <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-dim">
           <TrendingUp className="h-4 w-4 text-leaf" /> Qualified-lead booking lift
         </div>
         <div className="mt-2 flex items-baseline gap-3">
-          <span className="font-display text-5xl text-leaf">
+          <span className="font-display text-5xl text-leaf drop-shadow-[0_0_24px_rgba(116,215,154,0.35)]">
             {lift >= 0 ? "+" : ""}
             {lift} pts
           </span>
@@ -177,12 +184,12 @@ function Report({ data }: { data: Results }) {
       </div>
 
       {/* Per-persona dots */}
-      <div className="glass mt-4 rounded-[var(--radius-card)] p-5">
+      <div className="glass sheen relative mt-4 rounded-[var(--radius-card)] p-5">
         <div className="mb-3 text-xs uppercase tracking-[0.16em] text-dim">
           Per-lead outcome (Sunny)
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {data.agentic.outcomes.map((o) => {
+          {data.agentic.outcomes.map((o, i) => {
             const good = o.booked === o.qualified;
             const color = !o.qualified
               ? o.booked
@@ -195,8 +202,8 @@ function Report({ data }: { data: Results }) {
               <span
                 key={o.id}
                 title={`${o.id} — ${o.qualified ? "qualified" : "unqualified"}, ${o.booked ? "booked" : "no"}`}
-                className="h-3 w-3 rounded-full ring-1 ring-inset ring-white/10"
-                style={{ background: color, opacity: good ? 1 : 0.85 }}
+                className="anim-rise h-3 w-3 rounded-full ring-1 ring-inset ring-white/10"
+                style={{ background: color, opacity: good ? 1 : 0.85, animationDelay: `${i * 40}ms` }}
               />
             );
           })}
@@ -231,7 +238,7 @@ function ArmCard({
 }) {
   return (
     <div
-      className={`glass rounded-[var(--radius-card)] p-5 ${sunlit ? "glass-sun" : ""}`}
+      className={`glass sheen relative rounded-[var(--radius-card)] p-5 ${sunlit ? "glass-sun" : ""}`}
     >
       <div className="flex items-center gap-2 text-sm font-medium text-cream">
         <span className="text-sun">{icon}</span>

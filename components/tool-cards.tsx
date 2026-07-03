@@ -17,6 +17,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { cn, usd, num } from "@/lib/utils";
+import { TickerNumber } from "./ticker-number";
 import type {
   LeadScoreResult,
   SystemRecResult,
@@ -57,9 +58,19 @@ const ICONS: Record<ToolName, React.ComponentType<{ className?: string }>> = {
 };
 
 const enter = {
-  initial: { opacity: 0, y: 12, scale: 0.98 },
-  animate: { opacity: 1, y: 0, scale: 1 },
+  initial: { opacity: 0, y: 12, scale: 0.98, filter: "blur(6px)" },
+  animate: { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" },
   transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as const },
+};
+
+/* Line-by-line assembly for the quote card. */
+const cascade = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.09, delayChildren: 0.15 } },
+};
+const cascadeItem = {
+  hidden: { opacity: 0, x: -8 },
+  show: { opacity: 1, x: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] as const } },
 };
 
 /* ------------------------------------------------------------------ */
@@ -117,12 +128,19 @@ function Shell({
     <motion.div
       {...enter}
       className={cn(
-        "glass relative w-full max-w-[28rem] overflow-hidden rounded-[var(--radius-card)] p-4",
+        "glass sheen relative w-full max-w-[28rem] overflow-hidden rounded-[var(--radius-card)] p-4",
         sunlit && "glass-sun",
       )}
     >
+      <span
+        aria-hidden
+        className={cn(
+          "absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent to-transparent",
+          sunlit ? "via-sun/50" : "via-cream/25",
+        )}
+      />
       <div className="mb-3 flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-dusk-700 text-sun">
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-b from-dusk-600 to-dusk-800 text-sun ring-1 ring-inset ring-white/10">
           <Icon className="h-4 w-4" />
         </span>
         <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-dim">
@@ -198,7 +216,10 @@ function ScoreRing({ value, color }: { value: number; color: string }) {
   const c = 2 * Math.PI * r;
   const offset = c * (1 - value / 100);
   return (
-    <div className="relative h-[90px] w-[90px] shrink-0">
+    <div
+      className="relative h-[90px] w-[90px] shrink-0"
+      style={{ filter: `drop-shadow(0 0 9px color-mix(in oklab, ${color} 40%, transparent))` }}
+    >
       <svg className="h-full w-full -rotate-90" viewBox="0 0 80 80">
         <circle cx="40" cy="40" r={r} fill="none" stroke="var(--color-dusk-700)" strokeWidth="6" />
         <motion.circle
@@ -217,7 +238,9 @@ function ScoreRing({ value, color }: { value: number; color: string }) {
       </svg>
       <div className="absolute inset-0 grid place-items-center">
         <div className="text-center">
-          <div className="font-display text-2xl leading-none text-cream">{value}</div>
+          <div className="font-display text-2xl leading-none text-cream">
+            <TickerNumber value={value} duration={1.1} delay={0.15} />
+          </div>
           <div className="text-[9px] uppercase tracking-wider text-faint">/ 100</div>
         </div>
       </div>
@@ -351,43 +374,61 @@ function QuoteCard({ data }: { data: QuoteResult }) {
         </h3>
       </div>
 
-      {/* price waterfall */}
-      <div className="mt-3 space-y-1.5 text-sm">
-        <Row label="System price" value={usd(e.grossPrice)} />
-        <Row label={`Federal credit (30%)`} value={`– ${usd(e.federalCredit)}`} muted />
-        {e.stateIncentive > 0 && (
-          <Row label="State incentive" value={`– ${usd(e.stateIncentive)}`} muted />
-        )}
-        <div className="!mt-2 flex items-center justify-between border-t border-line/50 pt-2">
-          <span className="text-sm text-dim">Net cost</span>
-          <span className="font-display text-xl text-cream">{usd(e.netPrice)}</span>
+      {/* price waterfall — assembles line by line */}
+      <motion.div variants={cascade} initial="hidden" animate="show">
+        <div className="mt-3 space-y-1.5 text-sm">
+          <Row label="System price" value={usd(e.grossPrice)} />
+          <Row label={`Federal credit (30%)`} value={`– ${usd(e.federalCredit)}`} muted />
+          {e.stateIncentive > 0 && (
+            <Row label="State incentive" value={`– ${usd(e.stateIncentive)}`} muted />
+          )}
+          <motion.div
+            variants={cascadeItem}
+            className="!mt-2 flex items-center justify-between border-t border-line/50 pt-2"
+          >
+            <span className="text-sm text-dim">Net cost</span>
+            <span className="font-display text-xl text-cream">{usd(e.netPrice)}</span>
+          </motion.div>
         </div>
-      </div>
 
-      {/* financing + monthly */}
-      <div className="mt-3 flex items-center gap-2 rounded-xl border border-line/50 bg-dusk-850/60 px-3 py-2">
-        <Wallet className="h-4 w-4 text-sun" />
-        <div className="flex-1">
-          <div className="text-xs font-medium text-cream">{data.financing.label}</div>
-          <div className="text-[11px] text-dim">{data.financing.blurb}</div>
-        </div>
-        {data.monthlyLoanEstimate != null && (
-          <div className="text-right">
-            <div className="font-display text-base text-sun-bright">
-              {usd(data.monthlyLoanEstimate)}
-            </div>
-            <div className="text-[10px] text-faint">/ mo est.</div>
+        {/* financing + monthly */}
+        <motion.div
+          variants={cascadeItem}
+          className="mt-3 flex items-center gap-2 rounded-xl border border-line/50 bg-dusk-850/60 px-3 py-2"
+        >
+          <Wallet className="h-4 w-4 text-sun" />
+          <div className="flex-1">
+            <div className="text-xs font-medium text-cream">{data.financing.label}</div>
+            <div className="text-[11px] text-dim">{data.financing.blurb}</div>
           </div>
-        )}
-      </div>
+          {data.monthlyLoanEstimate != null && (
+            <div className="text-right">
+              <div className="font-display text-base text-sun-bright">
+                {usd(data.monthlyLoanEstimate)}
+              </div>
+              <div className="text-[10px] text-faint">/ mo est.</div>
+            </div>
+          )}
+        </motion.div>
 
-      {/* hero: lifetime savings */}
-      <div className="mt-3 flex items-center justify-between rounded-xl bg-gradient-to-r from-leaf/15 to-transparent px-3 py-2.5">
-        <span className="inline-flex items-center gap-1.5 text-xs text-cream/80">
-          <TrendingUp className="h-4 w-4 text-leaf" /> 25-year net savings
-        </span>
-        <span className="font-display text-xl text-leaf">{usd(e.twentyFiveYearSavings)}</span>
-      </div>
+        {/* hero: lifetime savings — the number arrives like a reveal */}
+        <motion.div
+          variants={cascadeItem}
+          className="mt-3 flex items-center justify-between rounded-xl bg-gradient-to-r from-leaf/15 to-transparent px-3 py-2.5"
+        >
+          <span className="inline-flex items-center gap-1.5 text-xs text-cream/80">
+            <TrendingUp className="h-4 w-4 text-leaf" /> 25-year net savings
+          </span>
+          <span className="font-display text-2xl text-leaf drop-shadow-[0_0_14px_rgba(116,215,154,0.35)]">
+            <TickerNumber
+              value={e.twentyFiveYearSavings}
+              format={(n) => usd(Math.round(n))}
+              duration={1.3}
+              delay={0.45}
+            />
+          </span>
+        </motion.div>
+      </motion.div>
 
       <p className="mt-2.5 text-[11px] text-faint">
         Estimate valid {data.validDays} days · {data.warrantyYears}-yr warranty · final numbers
@@ -399,10 +440,10 @@ function QuoteCard({ data }: { data: QuoteResult }) {
 
 function Row({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
-    <div className="flex items-center justify-between">
+    <motion.div variants={cascadeItem} className="flex items-center justify-between">
       <span className="text-dim">{label}</span>
       <span className={cn("tabular-nums", muted ? "text-leaf" : "text-cream")}>{value}</span>
-    </div>
+    </motion.div>
   );
 }
 
@@ -417,8 +458,14 @@ function BookingCard({ data }: { data: BookingResult }) {
           initial={{ scale: 0, rotate: -30 }}
           animate={{ scale: 1, rotate: 0 }}
           transition={{ type: "spring", stiffness: 320, damping: 18, delay: 0.1 }}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-leaf/20 text-leaf"
+          className="relative grid h-11 w-11 shrink-0 place-items-center rounded-full bg-leaf/20 text-leaf"
         >
+          {/* one celebratory ring, then gone */}
+          <span
+            aria-hidden
+            className="absolute inset-0 rounded-full ring-2 ring-leaf/50"
+            style={{ animation: "ringBurst 0.9s ease-out 0.3s both" }}
+          />
           <Check className="h-5 w-5" strokeWidth={2.5} />
         </motion.div>
         <div>

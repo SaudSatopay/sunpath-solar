@@ -18,6 +18,41 @@ export function Atmosphere() {
         }}
       />
 
+      {/* a sparse constellation over the upper sky, a few stars breathing */}
+      <svg
+        className="absolute inset-x-0 top-0 h-[62vh] w-full"
+        viewBox="0 0 100 60"
+        preserveAspectRatio="xMidYMid slice"
+        fill="none"
+      >
+        {(
+          [
+            [7, 9, 0.5], [14, 22, 0.35], [21, 6, 0.4], [27, 30, 0.3],
+            [33, 14, 0.55], [40, 4, 0.3], [46, 25, 0.4], [52, 10, 0.35],
+            [58, 33, 0.3], [63, 7, 0.5], [69, 19, 0.35], [76, 28, 0.4],
+            [82, 5, 0.35], [88, 15, 0.5], [93, 24, 0.3], [11, 38, 0.25],
+            [37, 41, 0.25], [71, 40, 0.28], [95, 36, 0.25], [4, 27, 0.3],
+          ] as const
+        ).map(([x, y, r], i) => (
+          <circle
+            key={i}
+            cx={x}
+            cy={y}
+            r={r * 0.22}
+            fill="#f3ede2"
+            opacity={0.32}
+            style={
+              i % 5 === 0
+                ? { animation: `twinkle ${5 + (i % 3) * 2}s ease-in-out ${i * 0.7}s infinite` }
+                : undefined
+            }
+          />
+        ))}
+      </svg>
+
+      {/* warm hairline where the glow meets the horizon */}
+      <div className="flare-line absolute bottom-[15vh] left-1/2 w-[72vw] -translate-x-1/2 opacity-50" />
+
       {/* the sun glow on the horizon */}
       <div
         className="absolute bottom-[-22vh] left-1/2 h-[70vh] w-[120vh] -translate-x-1/2 rounded-full blur-[40px]"
