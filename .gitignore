@@ -16,6 +16,9 @@
 # eval — resumable run progress (results.json IS committed to deploy the number)
 /eval/.eval-cache.json
 
+# local assistant tooling — not part of the project
+/CLAUDE.md
+
 # next.js
 /.next/
 /out/
