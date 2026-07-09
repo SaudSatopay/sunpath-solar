@@ -1,8 +1,18 @@
 <div align="center">
 
+<a href="https://sunpath-beige.vercel.app">
+  <img src="https://sunpath-beige.vercel.app/opengraph-image" alt="SunPath Solar — meet Sunny, your AI solar guide" width="840" />
+</a>
+
 # ☀️ SunPath Solar
 
 ### Meet **Sunny** — an _agentic_ AI solar sales rep that qualifies, sizes, quotes, and **books a survey**, live in chat.
+
+<p>
+  <a href="https://sunpath-beige.vercel.app"><img src="https://img.shields.io/badge/▶%20_Live_demo-sunpath--beige.vercel.app-ffb23e?style=for-the-badge&labelColor=0b0d13" alt="Live demo" /></a>
+  <a href="https://sunpath-beige.vercel.app/results"><img src="https://img.shields.io/badge/📊_Conversion_eval-%2Fresults-74d79a?style=for-the-badge&labelColor=0b0d13" alt="Conversion eval" /></a>
+  <a href="./DEMO.md"><img src="https://img.shields.io/badge/🎬_Demo_script-DEMO.md-93d4f2?style=for-the-badge&labelColor=0b0d13" alt="Demo script" /></a>
+</p>
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
 ![React](https://img.shields.io/badge/React-19.2-149ECA?logo=react&logoColor=white)
@@ -10,6 +20,8 @@
 ![Gemini](https://img.shields.io/badge/Gemini-Flash-886FBF?logo=googlegemini&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38BDF8?logo=tailwindcss&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-26_passing-22c55e)
+![Failover](https://img.shields.io/badge/failover-verified_live-ff6a3d)
 ![License](https://img.shields.io/badge/license-MIT-22c55e)
 
 **🏆 FlowZint AI Hackathon 2026 · Sales Bot track**
@@ -21,6 +33,14 @@ _Not a chat box over an FAQ. An agent that takes real actions — and proves it 
 ---
 
 > **TL;DR** — Most "sales bots" answer questions. **Sunny runs the funnel.** It qualifies a homeowner, sizes a real system, handles objections with grounded facts, builds a quote, and books a site survey — through **6 tools** and **multi-step tool-calling**, with every action streaming into the chat as a **bespoke interactive card**. It's measured against one number: _booked surveys from genuinely qualified homeowners_, via a reproducible A/B eval.
+
+<table align="center">
+  <tr><td><b>🌐 Live</b></td><td><a href="https://sunpath-beige.vercel.app">sunpath-beige.vercel.app</a> — answers even during provider brownouts (automatic failover)</td></tr>
+  <tr><td><b>🤖 Agent</b></td><td>6 typed tools · multi-step tool-calling · every action renders as generative UI</td></tr>
+  <tr><td><b>📈 Proof</b></td><td>reproducible A/B conversion-lift eval → <a href="https://sunpath-beige.vercel.app/results">/results</a></td></tr>
+  <tr><td><b>🧯 Reliability</b></td><td>3-layer tool-call defense · 12s primary budget → Groq failover — each defense born from a failure hit live</td></tr>
+  <tr><td><b>✅ Tests</b></td><td>26 unit tests pinning the economics engine and the schema hardening</td></tr>
+</table>
 
 <div align="center">
 
@@ -239,17 +259,33 @@ flowchart LR
 
 ## 🧯 Reliability engineering
 
-Free-tier LLM infrastructure fails in real, observed ways. This repo treats each failure we actually hit as a product case, not a disclaimer:
+Free-tier LLM infrastructure fails in real, observed ways. **Every row below is a failure we actually hit while building — each one became a shipped defense plus a regression test**, not a disclaimer:
 
 | Failure we hit (for real) | Defense in the code |
 |---|---|
 | Gemini free tier: `503 — model experiencing high demand`, mid-conversation | **Automatic provider failover** (`lib/model.ts`): the call transparently retries on Groq _before any tokens stream_ — the homeowner just gets an answer |
+| A congested primary **stalled long enough to eat the route's whole 60s window** — killing the turn even though the backup was healthy | **12-second start budget**: the primary races a timer on every call; miss it and the fallback serves. Worst-case time-to-first-token is bounded |
 | `429 RESOURCE_EXHAUSTED` (daily quota) | **Quota-aware error UX**: the route maps 429s to friendly, in-character copy and the chat UI surfaces it with a retry — never a raw stack trace |
-| Models emit `null`, `"240"`, or free text where schemas expected enums/numbers (crashed two eval runs) | **Permissive-then-normalize tool schemas** — `.nullish()`, `z.coerce.number()`, fallback ids — locked in by regression tests |
+| Models emit `null`, `"240"`, or free text where schemas expected enums/numbers (crashed two eval runs) | **Nullable-everything tool schemas** — `.nullish()`, `z.coerce.number()`, fallback ids — a tool-input validation crash is now structurally impossible |
+| Models call tools **before collecting prerequisites** (sizing with no bill, booking with no contact) | **Needs-info steering**: the tool returns `{ needsInfo, message }` so the agent asks the homeowner and retries — the turn is guided, not killed |
+| gpt-oss garbled a tool **name**: `logToCRM<\|channel\|>commentary` → `NoSuchToolError` | **Tool-call repair hook** strips the token leak and re-targets the real tool; genuinely unknown names still fail loudly |
 | Token-per-day caps abort long eval runs | **Resumable eval**: every conversation checkpoints to disk, re-runs skip finished work, and retries honor the provider's `try again in Xs` hint |
 
-- Failover chain: primary (`SUNPATH_PROVIDER`, default Gemini) → **Groq `gpt-oss-120b`** whenever `GROQ_API_KEY` is set. Kill switch: `SUNPATH_FAILOVER=0`.
-- **21 unit tests** (`npm test`) pin the economics engine and the schema hardening — the two places a wrong value would cost trust.
+```mermaid
+flowchart LR
+    R["Chat request"] --> P["Primary model<br/>(Gemini, 12s start budget)"]
+    P -->|"streams"| OK["Reply streams to the homeowner"]
+    P -->|"429 / 5xx / 401 / 403<br/>or budget exceeded"| F["Groq gpt-oss-120b<br/>(fallback)"]
+    F -->|"streams"| OK
+    F -.->|"also down"| E["Friendly, quota-aware<br/>error + retry in the UI"]
+```
+
+**Verified live — not just written:**
+- 🔑 Blanked the Google key (surfaces as `403 PERMISSION_DENIED`) → failover served the reply.
+- 🌩️ During a real Gemini brownout, a dead-primary request completed via Groq in **1.9 seconds** end-to-end.
+- 🛰️ The production deployment rode out that same brownout serving real traffic from the fallback — invisibly to users.
+
+Failover chain: primary (`SUNPATH_PROVIDER`, default Gemini) → **Groq `gpt-oss-120b`** whenever `GROQ_API_KEY` is set. Kill switch: `SUNPATH_FAILOVER=0`. **26 unit tests** (`npm test`) pin the economics engine and every schema-hardening lesson above.
 
 ---
 
@@ -320,8 +356,9 @@ sunpath/
 ├── components/
 │   ├── chat.tsx               # useChat client · message + tool-part rendering · funnel rail
 │   ├── tool-cards.tsx         # generative UI — one bespoke card per tool
+│   ├── ticker-number.tsx      # count-up numerals (score, savings) — reduced-motion aware
 │   ├── stage-rail.tsx         # Qualify → Design → Quote → Book progress
-│   └── atmosphere.tsx         # animated dusk + solar-glow backdrop
+│   └── atmosphere.tsx         # starfield dusk + solar-glow backdrop
 ├── lib/
 │   ├── agent-prompt.ts        # Sunny's system prompt (composed from the KB)
 │   ├── model.ts               # provider selection + automatic failover chain
@@ -331,9 +368,10 @@ sunpath/
 │   ├── solar-data.test.ts     # economics engine unit tests
 │   ├── tool-types.ts          # shared types mirroring tool outputs
 │   └── utils.ts               # formatting + cn()
-└── eval/
-    ├── personas.ts            # 16 simulated leads (ground-truth qualified flag)
-    └── run.ts                 # the conversion-lift harness (resumable, provider-agnostic)
+├── eval/
+│   ├── personas.ts            # 16 simulated leads (ground-truth qualified flag)
+│   └── run.ts                 # the conversion-lift harness (resumable, provider-agnostic)
+└── DEMO.md                    # shot-for-shot demo-video script
 ```
 
 ---
@@ -380,7 +418,7 @@ GitHub-linked **Vercel** import (auto-redeploys on push):
 | **Model Innovation** | **30%** | Genuine multi-step **agentic tool-use** + **generative UI** — the agent _acts_ and _renders itself_, not a Q&A wrapper |
 | **Real-World Applicability** | **25%** | A measurable business outcome (**booking lift**) on a real funnel, grounded in defensible economics |
 | **Technical Architecture** | **25%** | Clean separation (agent / tools / data / UI / eval), typed end-to-end, public repo, builds clean on a 2026 stack |
-| **Documentation** | **20%** | This README + a self-explanatory `/results` dashboard + a reproducible eval |
+| **Documentation** | **20%** | This README + a shot-for-shot [demo script](./DEMO.md) + a self-explanatory `/results` dashboard + a reproducible eval |
 
 ---
 
@@ -397,8 +435,8 @@ A deliberate, non-generic aesthetic — no Inter, no purple-on-white:
 
 ## 🛣 Roadmap
 
-- [ ] Publish the headline **conversion-lift number** on `/results` (full A/B run in progress)
-- [ ] 2-minute **demo video** (cards streaming → the metric)
+- [ ] Publish the headline **conversion-lift number** on `/results` (full A/B run in progress — the harness is resumable)
+- [x] Shot-for-shot **demo script** ([`DEMO.md`](./DEMO.md)) — video recording next
 - [ ] Final demo on **Claude Opus 4.8** (already wired — `SUNPATH_PROVIDER=anthropic`)
 - [ ] **Bilingual** (AR/EN) toggle — the agent already replies in the user's language
 - [ ] Voice input (Web Speech) for a hands-free funnel
