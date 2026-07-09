@@ -53,6 +53,10 @@ export async function POST(req: Request): Promise<Response> {
     stopWhen: stepCountIs(10),
     // Some open models garble tool names (Harmony-token leaks) — repair them.
     experimental_repairToolCall: repairGarbledToolCall,
+    // Failover (lib/model.ts) already answers from the backup on the first
+    // failure — extra retry cycles against a congested primary just burn the
+    // route's 60s budget.
+    maxRetries: 1,
   });
 
   return result.toUIMessageStreamResponse({

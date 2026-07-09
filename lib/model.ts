@@ -67,9 +67,36 @@ function isUnavailableError(error: unknown): boolean {
     );
   }
   const msg = error instanceof Error ? error.message : String(error);
-  return /rate limit|quota|overload|high demand|resource_exhausted|permission_denied|api key|unavailable/i.test(
+  return /rate limit|quota|overload|high demand|resource_exhausted|permission_denied|api key|unavailable|timed out/i.test(
     msg,
   );
+}
+
+/**
+ * The primary provider gets a strict time budget to START responding. Observed
+ * live: a congested Gemini can stall/retry long enough to eat the route's whole
+ * 60s window, so the turn dies even though the fallback was healthy. Racing the
+ * initial call keeps worst-case time-to-first-token ≈ this budget + fallback.
+ */
+const PRIMARY_START_BUDGET_MS = 12_000;
+
+function withStartBudget<T>(work: PromiseLike<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`primary model timed out after ${ms}ms`)),
+      ms,
+    );
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 /**
@@ -88,7 +115,7 @@ function withFailover(
     middleware: {
       wrapStream: async ({ doStream, params }) => {
         try {
-          return await doStream();
+          return await withStartBudget(doStream(), PRIMARY_START_BUDGET_MS);
         } catch (error) {
           if (!isUnavailableError(error)) throw error;
           console.warn(`[model] primary provider unavailable — failing over to ${fallbackLabel}`);
@@ -97,7 +124,7 @@ function withFailover(
       },
       wrapGenerate: async ({ doGenerate, params }) => {
         try {
-          return await doGenerate();
+          return await withStartBudget(doGenerate(), PRIMARY_START_BUDGET_MS);
         } catch (error) {
           if (!isUnavailableError(error)) throw error;
           console.warn(`[model] primary provider unavailable — failing over to ${fallbackLabel}`);
