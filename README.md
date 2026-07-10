@@ -298,13 +298,15 @@ flowchart LR
     P["16 simulated leads<br/>eval/personas.ts<br/>(ground-truth: qualified?)"]
     P --> AG["Arm A — Sunny<br/>agent + 6 tools + methodology"]
     P --> BL["Arm B — Baseline<br/>plain FAQ bot, no tools"]
-    AG --> CV["Same lead-simulator drives both<br/>identical protocol → [BOOKED] / [DECLINE]"]
+    AG --> CV["Same lead-simulator drives both<br/>identical discerning-buyer protocol"]
     BL --> CV
-    CV --> MET["Metrics per arm:<br/>• booked-rate among qualified leads<br/>• false-push rate (unqualified)<br/>• qualification accuracy"]
+    CV --> MET["Metrics per arm:<br/>• completed bookings among qualified leads<br/>• stated willingness (for contrast)<br/>• false-push rate (unqualified)<br/>• qualification accuracy"]
     MET --> OUT["eval/results.json → live /results dashboard"]
 ```
 
-**Why the design is fair:** both arms use the **same model** and the **same lead-simulator**, with one identical decision protocol — a lead emits `[BOOKED]` when convinced and `[DECLINE]` when not. The **only** variable is the rep. The 16 personas carry a ground-truth `qualified` flag (incl. a renter and a tiny-bill household), so we can score not just _did it book_ but _did it book the right people_.
+**What counts as a conversion — completed bookings, not compliments.** A pilot run scored lead-stated *willingness* and the metric saturated: a polite FAQ bot hit **100%** willingness while being unable to book anything. So the headline metric counts bookings that **exist**: for Sunny, a verified `bookSurvey` tool execution (appointment created, name + contact captured); for the baseline, explicit agreement **plus** a contact captured in-chat — it can still convert, it just has to do real funnel work. Willingness is still recorded per arm and shown alongside, because the saturation itself is a finding.
+
+**Why the design is fair:** both arms use the **same model** and the **same lead-simulator**, with one identical discerning-buyer protocol — leads book only after concrete case-specific numbers, their concern addressed, and a proposed next step, and they hand over contact info when agreeing. The **only** variable is the rep. The 16 personas carry a ground-truth `qualified` flag (incl. a renter and a tiny-bill household), so we score not just _did it book_ but _did it book the right people_.
 
 **Run it:**
 
@@ -316,8 +318,9 @@ It outputs the shape below (run it for live numbers):
 
 ```jsonc
 {
-  "agentic":  { "convQualifiedPct": __, "falsePushPct": __, "qualAccuracyPct": __ },
-  "baseline": { "convQualifiedPct": __, "falsePushPct": __, "qualAccuracyPct": __ },
+  "metric":   "completed-booking-v2: …",
+  "agentic":  { "convQualifiedPct": __, "willingQualifiedPct": __, "falsePushPct": __, "qualAccuracyPct": __ },
+  "baseline": { "convQualifiedPct": __, "willingQualifiedPct": __, "falsePushPct": __, "qualAccuracyPct": __ },
   "liftPoints": __, "relativeLiftPct": __
 }
 ```

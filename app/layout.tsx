@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -33,6 +33,11 @@ const siteUrl =
 const title = "SunPath Solar — Meet Sunny, your AI solar guide";
 const description =
   "Sunny is SunPath Solar's AI consultant: get a right-sized system, real numbers, and a booked survey — in one conversation.";
+
+export const viewport: Viewport = {
+  // Tint mobile browser chrome to the dusk canvas.
+  themeColor: "#07080c",
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
