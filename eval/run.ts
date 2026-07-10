@@ -1,14 +1,21 @@
 /**
- * Conversion-lift eval.
+ * Conversion-lift eval — v2, "completed booking" metric.
  *
  * Plays each simulated homeowner (eval/personas.ts) against two reps:
  *   - "agentic"  — Sunny, the full SunPath agent (system prompt + 6 tools + multi-step)
  *   - "baseline" — a plain FAQ assistant (same model, no tools, no methodology)
  *
  * The same lead model drives both arms with an identical decision protocol, so
- * the ONLY difference is the rep. A lead emits [BOOKED] when it agrees to a
- * survey and [DECLINE] when it opts out. We report booked-rate among genuinely
- * qualified leads, the false-push rate among unqualified leads, and the lift.
+ * the ONLY difference is the rep.
+ *
+ * METRIC (v2): a conversion is a COMPLETED booking, not stated willingness.
+ *   - agentic:  a successful bookSurvey tool execution (appointment exists,
+ *               name + contact captured) — verified from the tool record.
+ *   - baseline: the lead explicitly agreed ([BOOKED]) AND provided a contact
+ *               (email/phone) in-chat — the conversational equivalent.
+ * Stated willingness (the raw [BOOKED] token) is still recorded per arm and
+ * reported alongside, because v1 of this eval showed it saturates: a polite
+ * FAQ bot hit 100% willingness while booking nothing.
  *
  * RESUMABLE: every completed conversation is checkpointed to eval/.eval-cache.json
  * immediately, so a free-tier quota interruption never loses progress — re-run
@@ -118,10 +125,11 @@ Your situation (only you know this):
 
 Behave realistically. Answer the rep's questions, and raise your main concern once. Keep each message to 1-3 sentences.
 
-Decision protocol:
-- If the rep is honest and genuinely addresses your situation AND solar is actually a good fit for you, agree to book the free on-site survey and end that message with the exact token [BOOKED].
-- If you decide solar isn't right for you, or the rep is pushy, evasive, or invents numbers, end a message with the exact token [DECLINE].
-- Do NOT book if you don't own the home, or if solar clearly won't pay off for you.
+Decision protocol — you are a discerning buyer, not an easy yes:
+- Agree to book ONLY when ALL of these are true: (1) the rep gave concrete numbers for YOUR situation (system size, price, savings, or payback — not generic claims), (2) your main concern was genuinely addressed, and (3) the rep proposed a concrete next step (a site survey or appointment) and asked to book it.
+- When you agree to book: include your name and a contact (invent a realistic email or phone number) in that same message, and end it with the exact token [BOOKED].
+- If the rep stays vague or generic, can't produce numbers for your case, or gets pushy, do not book. End a message with the exact token [DECLINE] once you're sure you won't book.
+- NEVER book if you don't own the home, or if solar clearly won't pay off for you.
 - Otherwise, keep the conversation going (no token).`;
 }
 
@@ -152,57 +160,98 @@ async function leadReply(p: LeadPersona, transcript: Turn[]) {
   return res.text.trim();
 }
 
-async function agentReply(arm: Arm, transcript: Turn[]) {
-  const messages = toMessages(transcript, "agent");
-  const res =
-    arm === "agentic"
-      ? await withRetry(() =>
-          generateText({
-            model: AGENT_LM,
-            system: SYSTEM_PROMPT,
-            messages,
-            tools: salesTools,
-            stopWhen: stepCountIs(8),
-            experimental_repairToolCall: repairGarbledToolCall,
-          }),
-        )
-      : await withRetry(() =>
-          generateText({ model: AGENT_LM, system: BASELINE_PROMPT, messages }),
-        );
-  await sleep(THROTTLE_MS);
-  return res.text.trim() || "(…)";
+/** True when a step's tool results contain a successful bookSurvey execution. */
+function hasCompletedBooking(steps: Array<{ toolResults: Array<unknown> }>): boolean {
+  return steps
+    .flatMap((s) => s.toolResults)
+    .some((r) => {
+      const t = r as { toolName?: string; output?: { status?: string } };
+      return t.toolName === "bookSurvey" && t.output?.status === "booked";
+    });
 }
+
+async function agentReply(
+  arm: Arm,
+  transcript: Turn[],
+): Promise<{ text: string; bookedViaTool: boolean }> {
+  const messages = toMessages(transcript, "agent");
+  if (arm === "agentic") {
+    const res = await withRetry(() =>
+      generateText({
+        model: AGENT_LM,
+        system: SYSTEM_PROMPT,
+        messages,
+        tools: salesTools,
+        stopWhen: stepCountIs(8),
+        experimental_repairToolCall: repairGarbledToolCall,
+      }),
+    );
+    await sleep(THROTTLE_MS);
+    return { text: res.text.trim() || "(…)", bookedViaTool: hasCompletedBooking(res.steps) };
+  }
+  const res = await withRetry(() =>
+    generateText({ model: AGENT_LM, system: BASELINE_PROMPT, messages }),
+  );
+  await sleep(THROTTLE_MS);
+  return { text: res.text.trim() || "(…)", bookedViaTool: false };
+}
+
+/** A lead-supplied email or phone number — the baseline's "contact captured". */
+const CONTACT_RE = /[\w.+-]+@[\w-]+(\.[\w-]+)+|\+?\d[\d\s().-]{6,}\d/;
 
 async function runConversation(p: LeadPersona, arm: Arm) {
   const transcript: Turn[] = [];
   transcript.push({ role: "lead", content: await leadReply(p, transcript) });
+  let toolBooked = false;
+
+  const outcome = (willing: boolean) => {
+    // v2 conversion: agentic = a real bookSurvey record exists; baseline =
+    // explicit agreement AND a contact captured in the lead's own messages.
+    const leadText = transcript.filter((t) => t.role === "lead").map((t) => t.content).join("\n");
+    const booked =
+      arm === "agentic" ? toolBooked : willing && CONTACT_RE.test(leadText);
+    return { booked, willing, turns: transcript.length };
+  };
 
   for (let i = 0; i < MAX_TURNS; i++) {
-    transcript.push({ role: "agent", content: await agentReply(arm, transcript) });
+    const reply = await agentReply(arm, transcript);
+    toolBooked ||= reply.bookedViaTool;
+    transcript.push({ role: "agent", content: reply.text });
     const lead = await leadReply(p, transcript);
     transcript.push({ role: "lead", content: lead });
-    if (lead.includes("[BOOKED]")) return { booked: true, turns: transcript.length };
-    if (lead.includes("[DECLINE]")) return { booked: false, turns: transcript.length };
+    if (lead.includes("[BOOKED]")) {
+      // The lead just agreed (and shared contact). Give the agent one closing
+      // turn to actually execute the booking before we evaluate.
+      if (arm === "agentic" && !toolBooked) {
+        const closing = await agentReply(arm, transcript);
+        toolBooked ||= closing.bookedViaTool;
+        transcript.push({ role: "agent", content: closing.text });
+      }
+      return outcome(true);
+    }
+    if (lead.includes("[DECLINE]")) return outcome(false);
   }
-  return { booked: false, turns: transcript.length };
+  return outcome(false);
 }
 
 interface PersonaOutcome {
   id: string;
   qualified: boolean;
   booked: boolean;
+  willing: boolean;
   turns: number;
 }
 
 interface ArmReport {
   convQualifiedPct: number;
+  willingQualifiedPct: number;
   falsePushPct: number;
   qualAccuracyPct: number;
   outcomes: PersonaOutcome[];
 }
 
 /* --------------------------- checkpoint cache --------------------------- */
-type Cell = { booked: boolean; turns: number };
+type Cell = { booked: boolean; willing: boolean; turns: number };
 
 async function loadCache(): Promise<Record<string, Cell>> {
   if (process.env.EVAL_FRESH) {
@@ -228,6 +277,7 @@ function armReport(outcomes: PersonaOutcome[]): ArmReport {
   const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
   return {
     convQualifiedPct: pct(qualified.filter((o) => o.booked).length, qualified.length),
+    willingQualifiedPct: pct(qualified.filter((o) => o.willing).length, qualified.length),
     falsePushPct: pct(unqualified.filter((o) => o.booked).length, unqualified.length),
     qualAccuracyPct: pct(outcomes.filter((o) => o.booked === o.qualified).length, outcomes.length),
     outcomes,
@@ -261,21 +311,29 @@ async function main() {
   outer: for (const arm of ARMS) {
     console.log(`Arm — ${arm}:`);
     for (const p of LEADS) {
-      // Namespace by model config so a provider switch can't reuse stale outcomes.
-      const key = `${AGENT_LABEL}|${LEAD_LABEL}|${arm}|${p.id}`;
+      // Namespace by metric version + model config so neither a protocol change
+      // nor a provider switch can ever reuse stale outcomes.
+      const key = `v2|${AGENT_LABEL}|${LEAD_LABEL}|${arm}|${p.id}`;
       const cached = !!cache[key];
       try {
         let cell = cache[key];
         if (!cell) {
           const r = await runConversation(p, arm);
-          cell = { booked: r.booked, turns: r.turns };
+          cell = { booked: r.booked, willing: r.willing, turns: r.turns };
           cache[key] = cell;
           await saveCache(cache); // persist immediately — survives a later crash
         }
-        collected[arm].push({ id: p.id, qualified: p.qualified, booked: cell.booked, turns: cell.turns });
+        collected[arm].push({
+          id: p.id,
+          qualified: p.qualified,
+          booked: cell.booked,
+          willing: cell.willing,
+          turns: cell.turns,
+        });
         done++;
+        const mark = cell.booked ? "BOOKED " : cell.willing ? "willing" : "—      ";
         console.log(
-          `  [${arm}] ${p.id.padEnd(16)} ${cell.booked ? "BOOKED " : "—      "} (${p.qualified ? "qualified" : "unqualified"})${cached ? "  ·cached" : ""}`,
+          `  [${arm}] ${p.id.padEnd(16)} ${mark} (${p.qualified ? "qualified" : "unqualified"})${cached ? "  ·cached" : ""}`,
         );
       } catch (err) {
         aborted = `${arm}/${p.id}: ${(err as Error).message}`;
@@ -293,16 +351,19 @@ async function main() {
   const relativeLiftPct =
     baseline.convQualifiedPct > 0 ? Math.round((liftPts / baseline.convQualifiedPct) * 100) : null;
 
+  const sign = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
   console.log("\n────────────────────────────────────────");
-  console.log(`Qualified-lead booking rate${complete ? "" : "  (INTERIM — partial run)"}`);
-  console.log(`  Sunny (agentic): ${agentic.convQualifiedPct}%`);
-  console.log(`  Baseline (FAQ):  ${baseline.convQualifiedPct}%`);
-  console.log(`  Lift: +${liftPts} pts${relativeLiftPct != null ? ` (+${relativeLiftPct}% relative)` : ""}`);
+  console.log(`Completed bookings among qualified leads${complete ? "" : "  (INTERIM — partial run)"}`);
+  console.log(`  Sunny (agentic): ${agentic.convQualifiedPct}%   (willingness ${agentic.willingQualifiedPct}%)`);
+  console.log(`  Baseline (FAQ):  ${baseline.convQualifiedPct}%   (willingness ${baseline.willingQualifiedPct}%)`);
+  console.log(`  Lift: ${sign(liftPts)} pts${relativeLiftPct != null ? ` (${sign(relativeLiftPct)}% relative)` : ""}`);
   console.log(`  False-push on unqualified — Sunny ${agentic.falsePushPct}% vs baseline ${baseline.falsePushPct}%`);
 
   if (complete) {
     const out = {
       generatedAt: new Date().toISOString(),
+      metric:
+        "completed-booking-v2: agentic = successful bookSurvey execution; baseline = explicit agreement + contact captured in-chat. willingQualifiedPct records raw stated willingness (the v1 metric, which saturates).",
       agentModel: AGENT_LABEL,
       leadModel: LEAD_LABEL,
       personasCount: LEADS.length,
