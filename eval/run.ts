@@ -427,6 +427,8 @@ async function main() {
       console.log("Likely free-tier quota. Re-run `npm run eval` to continue — finished conversations are skipped.");
     }
     console.log("eval/results.json is written only once all conversations complete.");
+    // Deliberate stop — release the lock so an immediate resume isn't blocked.
+    await rm(LOCK_PATH, { force: true });
     process.exit(1);
   }
 }
